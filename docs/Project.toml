@@ -1,0 +1,7 @@
+[deps]
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+TeaSeis = "db5f7d96-a200-5343-9fc6-a259b42289b2"
+
+[compat]
+Documenter = "0.25"
+TeaSeis = "0.4"
