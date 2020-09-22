@@ -1,6 +1,6 @@
 module CloudSeis
 
-using AbstractStorage, Distributed, JSON, Random, TeaSeis
+using AbstractStorage, Blosc, Distributed, JSON, Random, TeaSeis
 
 struct TracePropertyDef{T}
     label::String
@@ -102,14 +102,59 @@ const CACHE_NONE = 0
 const CACHE_FOLDMAP = 1
 const CACHE_ALL = 2
 
-mutable struct Cache
+# compression algorithms <--
+abstract type AbstractCompressor end
+
+struct BloscCompressor <: AbstractCompressor
+    algorithm::String
+    level::Int
+    shuffle::Bool
+end
+BloscCompressor(d::Dict) = BloscCompressor(d["library_options"]["algorithm"], d["library_options"]["level"], d["library_options"]["shuffle"])
+function Dict(c::BloscCompressor)
+    Dict(
+        "method" => "blosc",
+        "library" => "Blosc.jl",
+        "library_version" => "0.7.0",
+        "library_options" => Dict(
+            "algorithm" => c.algorithm,
+            "level" => c.level,
+            "shuffle" => c.shuffle))
+end
+Base.copy(c::BloscCompressor) = BloscCompressor(c.algorithm, c.level, c.shuffle)
+
+struct LeftJustifyCompressor <: AbstractCompressor end
+LeftJustifyCompressor(d::Dict) = LeftJustifyCompressor()
+Dict(c::LeftJustifyCompressor) = Dict("method" => "leftjustify")
+Base.copy(c::LeftJustifyCompressor) = LeftJustifyCompressor()
+
+struct NotACompressor <: AbstractCompressor end
+NotACompressor(d::Dict) = NotACompressor()
+Dict(c::NotACompressor) = Dict("method" => "none")
+Base.copy(c::NotACompressor) = NotACompressor()
+
+function Compressor(d::Dict)
+    method = get(d, "method", "") # enables backwards compatability
+    if method == "blosc"
+        return BloscCompressor(d)
+    elseif method == "leftjustify"
+        return LeftJustifyCompressor(d)
+    else
+        return NotACompressor(d)
+    end
+end
+# -->
+
+mutable struct Cache{Z<:AbstractCompressor}
     extentindex::Int
     data::Vector{UInt8}
+    compressor::Z
     type::Int
 end
-Cache() = Cache(0, UInt8[], CACHE_NONE)
+Cache(compressor::AbstractCompressor) = Cache(0, UInt8[], compressor, CACHE_NONE)
+Base.similar(cache::Cache) = Cache(0, UInt8[], copy(cache.compressor), CACHE_NONE)
 
-struct CSeis{T,N,C<:Container,U<:NamedTuple,V<:NamedTuple,W<:NamedTuple}
+struct CSeis{T,N,Z<:AbstractCompressor,C<:Container,U<:NamedTuple,V<:NamedTuple,W<:NamedTuple}
     containers::Vector{C}
     mode::String
     datatype::String
@@ -125,7 +170,7 @@ struct CSeis{T,N,C<:Container,U<:NamedTuple,V<:NamedTuple,W<:NamedTuple}
     dataproperties::W
     geometry::Union{Geometry,Nothing}
     extents::Vector{Extent{C}}
-    cache::Cache
+    cache::Cache{Z}
     hdrlength::Int
 end
 
@@ -146,7 +191,7 @@ function Base.copy(io::CSeis, mode, extents)
         io.dataproperties,
         io.geometry,
         extents,
-        Cache(),
+        similar(io.cache),
         io.hdrlength)
 end
 
@@ -180,6 +225,7 @@ container.  The `axis_lengths` vector is of at-least length 3.
 * `axis_domains::Vector{String}` Domains corresponding to the CloudSeis axes. e.g. `SPACE`, `TIME`, etc.  If not set, then `UNKNOWN` is used.
 * `axis_pstarts::Vector{Float64}` Physical origins for each axis.  If not set, then `0.0` is used for the physical origin of each axis.
 * `axis_pincs::Vector{Float64}` Physical deltas for each axis.  If not set, then `1.0` is used for the physical delta for each axis.
+* `compressor="none"` Compress the cache before writing to disk.  This is particularly useful for data with variable fold.  chooose from: ("none", "blosc", "leftjustify")
 
 # Example
 ## Azure storage
@@ -213,7 +259,8 @@ function csopen(containers::Vector{<:Container}, mode;
         axis_domains = [],
         axis_lengths = [],
         axis_pstarts = [],
-        axis_pincs = [])
+        axis_pincs = [],
+        compressor = nothing)
     kwargs = (
         similarto = similarto,
         datatype = datatype,
@@ -231,7 +278,8 @@ function csopen(containers::Vector{<:Container}, mode;
         axis_domains = axis_domains,
         axis_lengths = axis_lengths,
         axis_pstarts = axis_pstarts,
-        axis_pincs = axis_pincs)
+        axis_pincs = axis_pincs,
+        compressor = compressor)
     if mode == "r" || mode == "r+"
         _kwargs = process_kwargs(;kwargs...)
         return csopen_read(containers, mode)
@@ -338,7 +386,8 @@ function csopen_write(containers::Vector{<:Container}, mode; kwargs...)
             "axis_pincs" => axis_pincs),
         "traceproperties"=>[Dict(traceproperty) for traceproperty in traceproperties],
         "dataproperties"=>[Dict(dataproperty) for dataproperty in kwargs[:dataproperties]],
-        "extents"=>Dict.(extents))
+        "extents"=>Dict.(extents),
+        "compressor"=>Dict(kwargs[:compressor]))
 
     if kwargs[:geometry] != nothing
         merge(description, Dict("geometry"=>Dict(kwargs[:geometry])))
@@ -354,7 +403,19 @@ function csopen_write(containers::Vector{<:Container}, mode; kwargs...)
     io
 end
 
+compressor_options() = Dict("none"=>NotACompressor(), ""=>NotACompressor(), "blosc"=>BloscCompressor("blosclz", 5, true), "leftjustify"=>LeftJustifyCompressor())
+compressor_error() = error("(compressor=$(kwargs[:compressor])) ∉ (\"\",\"none\",\"blosc\",\"leftjustify\")")
+
 function process_kwargs(;kwargs...)
+    compressors = compressor_options()
+    local compressor
+    if kwargs[:compressor] == nothing
+        compressor = compressors["none"]
+    else
+        kwargs[:compressor] ∈ keys(compressors) || compressor_error()
+        compressor = compressors[kwargs[:compressor]]
+    end
+
     (
         similarto = kwargs[:similarto],
         datatype = kwargs[:datatype] == "" ? "custom" : kwargs[:datatype],
@@ -372,7 +433,8 @@ function process_kwargs(;kwargs...)
         axis_domains = kwargs[:axis_domains],
         axis_lengths = kwargs[:axis_lengths],
         axis_pstarts = kwargs[:axis_pstarts],
-        axis_pincs = kwargs[:axis_pincs]
+        axis_pincs = kwargs[:axis_pincs],
+        compressor = compressor
     )
 end
 
@@ -388,6 +450,15 @@ function process_kwargs_similarto(;kwargs...)
 
     names = fieldnames(typeof(io.dataproperties))
     dataproperties = [DataProperty(String(names[i]), io.dataproperties[i]) for i=1:length(io.dataproperties)]
+
+    local compressor
+    if kwargs[:compressor] == nothing
+        compressor = io.cache.compressor
+    else
+        compressors = compressor_options()
+        kwargs[:compressor] ∈ keys(compressors) || compressor_error()
+        compressor = compressors[kwargs[:compressor]]
+    end
 
     (
         similarto = kwargs[:similarto],
@@ -406,7 +477,8 @@ function process_kwargs_similarto(;kwargs...)
         axis_domains = isempty(kwargs[:axis_domains]) ? [io.axis_domains[i] for i=1:length(io.axis_domains)] : kwargs[:axis_domains],
         axis_lengths = isempty(kwargs[:axis_lengths]) ? [io.axis_lengths[i] for i=1:length(io.axis_lengths)] : kwargs[:axis_lengths],
         axis_pstarts = isempty(kwargs[:axis_pstarts]) ? [io.axis_pstarts[i] for i=1:length(io.axis_pstarts)] : kwargs[:axis_pstarts],
-        axis_pincs = isempty(kwargs[:axis_pincs]) ? [io.axis_pincs[i] for i=1:length(io.axis_pincs)] : kwargs[:axis_pincs]
+        axis_pincs = isempty(kwargs[:axis_pincs]) ? [io.axis_pincs[i] for i=1:length(io.axis_pincs)] : kwargs[:axis_pincs],
+        compressor = compressor
     )
 end
 
@@ -428,7 +500,7 @@ function csopen_from_description(containers, mode, description, traceproperties)
         get_data_properties(description),
         get_geometry(description),
         [Extent(extent, containers) for extent in description["extents"]],
-        Cache(),
+        Cache(Compressor(get(description, "compressor", Dict()))),
         headerlength(traceproperties))
 end
 
@@ -591,6 +663,99 @@ function cachesize_foldmap(io::CSeis, extentindex)
     nframes*sizeof(Int)
 end
 
+function cache_from_file!(io::CSeis{T,N,NotACompressor}, extentindex) where {T,N}
+    @debug "reading extent $extentindex from block-storage..."
+    t = @elapsed begin
+        io.cache.data = read!(io.extents[extentindex].container, io.extents[extentindex].name, Vector{UInt8}(undef, filesize(io.extents[extentindex].container, io.extents[extentindex].name)))
+    end
+    mb = length(io.cache.data)/1_000_000
+    mbps = mb/t
+    @debug "...data read ($mbps MB/s -- $mb MB)"
+    nothing
+end
+
+function cache_from_file!(io::CSeis{T,N,BloscCompressor}, extentindex) where {T,N}
+    @debug "reading and decompressing extent $extentindex..."
+    t_read = @elapsed begin
+        cdata = read!(io.extents[extentindex].container, io.extents[extentindex].name, Vector{UInt8}(undef, filesize(io.extents[extentindex].container, io.extents[extentindex].name)))
+    end
+
+    t_decompress = @elapsed begin
+        io_cdata = IOBuffer(cdata; read=true, write=false)
+        nbuffers = read(io_cdata, Int)
+        buffersize = read!(io_cdata, Vector{Int}(undef, nbuffers))
+
+        io.cache.data = UInt8[]
+        for ibuffer = 1:nbuffers
+            cbuffer = read!(io_cdata, Vector{UInt8}(undef, buffersize[ibuffer]))
+            io.cache.data = [io.cache.data;decompress(UInt8, cbuffer)]
+        end
+    end
+    mb = length(io.cache.data) / 1_000_000
+    mb_compressed = length(cdata) / 1_000_000
+    mbps_read = mb_compressed/t_read
+    mbps_decompress = mb / t_decompress
+    mbps = mb / (t_read + t_decompress)
+    @debug "...data read and decompressed (effective: $mbps MB/s; decompression: $mbps_decompress MB/s; read: $mbps_read MB/s -- $mb MB; $mb_compressed compressed MB)"
+    nothing
+end
+
+function compressed_offsets(io::CSeis{T,N,LeftJustifyCompressor}, extentindex) where {T,N}
+    fmap = foldmap(io, extentindex)
+    nframes = length(fmap)
+    _headerlength = headerlength(io)
+
+    offset = 1 + nframes*sizeof(Int)
+
+    hdr_offsets = Vector{Int}(undef, nframes)
+    for iframe = 1:nframes
+        hdr_offsets[iframe] = iframe == 1 ? (offset) : (hdr_offsets[iframe-1] + fmap[iframe-1]*_headerlength)
+    end
+
+    offset = hdr_offsets[end] + fmap[end]*_headerlength
+
+    trc_offsets = Vector{Int}(undef, nframes)
+    for iframe = 1:nframes
+        trc_offsets[iframe] = iframe == 1 ? offset : (trc_offsets[iframe-1] + fmap[iframe-1]*size(io, 1)*sizeof(io.traceformat))
+    end
+
+    trc_offsets,hdr_offsets,fmap,nframes,_headerlength
+end
+
+function cache_from_file!(io::CSeis{T,N,LeftJustifyCompressor}, extentindex) where {T,N}
+    @debug "reading and decompressing extent $extentindex..."
+    t_read = @elapsed begin
+        io.cache.data = Vector{UInt8}(undef, cachesize(io, extentindex))
+        cdata = unsafe_wrap(Array, pointer(io.cache.data), (filesize(io.extents[extentindex].container, io.extents[extentindex].name),); own=false)
+        read!(io.extents[extentindex].container, io.extents[extentindex].name, cdata)
+        io.cache.data[1:length(cdata)] .= cdata
+    end
+
+    t_decompress = @elapsed begin
+        compressed_trc_offsets,compressed_hdr_offsets,fmap,nframes,_headerlength = compressed_offsets(io, extentindex)
+
+        for iframe = nframes:-1:1
+            copyto!(io.cache.data, trcsoffset(io, extentindex, io.extents[extentindex].frameindices[iframe]), io.cache.data, compressed_trc_offsets[iframe], fmap[iframe]*size(io,1)*sizeof(io.traceformat))
+        end
+
+        for iframe = nframes:-1:1
+            copyto!(io.cache.data, hdrsoffset(io, extentindex, io.extents[extentindex].frameindices[iframe]), io.cache.data, compressed_hdr_offsets[iframe], fmap[iframe]*_headerlength)
+        end
+
+        # regularize the indivdual frames
+        for (jframe,iframe) = enumerate(io.extents[extentindex].frameindices)
+            regularize!(io, fmap[jframe], getframetrcs(io, extentindex, CartesianIndex(iframe,)), getframehdrs(io, extentindex, CartesianIndex(iframe,)))
+        end
+    end
+    mb = length(io.cache.data) / 1_000_000
+    mb_compressed = length(cdata) / 1_000_000
+    mbps_read = mb_compressed/t_read
+    mbps_decompress = mb / t_decompress
+    mbps = mb / (t_read + t_decompress)
+    @debug "...data read and decompressed (effective: $mbps MB/s; decompression: $mbps_decompress MB/s; read: $mbps_read MB/s -- $mb MB; $mb_compressed compressed MB)"
+    nothing
+end
+
 function cache!(io::CSeis, extentindex::Integer, force=false)
     if extentindex == io.cache.extentindex && io.cache.type == CACHE_ALL && !force
         return extentindex
@@ -601,13 +766,7 @@ function cache!(io::CSeis, extentindex::Integer, force=false)
     end
 
     if isfile(io.extents[extentindex].container, io.extents[extentindex].name)
-        @debug "reading extent $extentindex from block-storage..."
-        t = @elapsed begin
-            io.cache.data = read!(io.extents[extentindex].container, io.extents[extentindex].name, Vector{UInt8}(undef, filesize(io.extents[extentindex].container, io.extents[extentindex].name)))
-        end
-        mb = length(io.cache.data)/1_000_000
-        mbps = mb/t
-        @debug "...data read ($mbps MB/s -- $mb MB)"
+        cache_from_file!(io, extentindex)
     else
         @debug "creating cache..."
         io.cache.data = zeros(UInt8, cachesize(io, extentindex))
@@ -626,7 +785,7 @@ end
 
 cache(io::CSeis) = io.cache
 
-function cache_foldmap!(io::CSeis, extentindex::Integer, force=false)
+function cache_foldmap!(io::Union{CSeis{T,N,NotACompressor}, CSeis{T,N,LeftJustifyCompressor}}, extentindex::Integer, force=false) where {T,N}
     _partialcache_error() = error("partial caching is only allowed in read-only \"r\" mode")
     io.mode == "r" || _partialcache_error()
 
@@ -647,12 +806,21 @@ function cache_foldmap!(io::CSeis, extentindex::Integer, force=false)
     extentindex
 end
 
+function cache_foldmap!(io::CSeis{T,N,BloscCompressor}, extentindex::Integer, force=false) where {T,N}
+    if extentindex == io.cache.extentindex && io.cache.type ∈ CACHE_ALL && !force
+        return extentindex
+    end
+    # TODO - we can't to a partial cache here because of how the compression works.
+    cache!(io, extentindex, force)
+    extentindex
+end
+
 function cache_foldmap!(io::CSeis, idx::CartesianIndex, force=false)
     extentindex = extentindex_from_frameindex(io, idx)
     cache_foldmap!(io, extentindex, force)
 end
 
-function Base.flush(io::CSeis)
+function Base.flush(io::CSeis{T,N,NotACompressor}) where {T,N}
     if io.cache.extentindex == 0
         return nothing
     end
@@ -661,6 +829,91 @@ function Base.flush(io::CSeis)
     mb = length(io.cache.data)/1_000_000
     mbps = mb/t
     @debug "...data wrote ($mbps MB/s -- $mb MB)"
+    nothing
+end
+
+function Base.flush(io::CSeis{T,N,BloscCompressor}) where {T,N}
+    if io.cache.extentindex == 0
+        return nothing
+    end
+
+    function flush_blosc_buffer_byterange(ibuffer, buffer_size, buffer_remainder)
+        isremainder = ibuffer <= buffer_remainder
+        firstbyte = (ibuffer - 1)*buffer_size + (isremainder ? ibuffer : buffer_remainder + 1)
+        lastbyte = firstbyte + (isremainder ? buffer_size : buffer_size - 1)
+        firstbyte,lastbyte
+    end
+
+    @debug "compressing and writing extent $(io.cache.extentindex)..."
+    t_compress = @elapsed begin
+        Blosc.set_num_threads(Sys.CPU_THREADS)
+        Blosc.set_compressor(io.cache.compressor.algorithm)
+
+        maxbuffersize = 2_000_000_000 # This is due to a limitation of the Blosc library.
+        cachesize = length(io.cache.data)
+        nbuffers,remaining_bytes = divrem(cachesize, maxbuffersize)
+        remaining_bytes > 0 && (nbuffers += 1)
+        buffersize,buffer_remainder = divrem(cachesize, nbuffers)
+
+        buffer_lengths = zeros(Int, nbuffers)
+        cdata = zeros(UInt8, 8*(1 + nbuffers)) # store number of buffers and length of each compressed buffer
+        cdata_io = IOBuffer(cdata; read=true, write=true)
+        write(cdata_io, nbuffers)
+        close(cdata_io)
+        for ibuffer = 1:nbuffers
+            firstbyte,lastbyte = flush_blosc_buffer_byterange(ibuffer, buffersize, buffer_remainder)
+            _data = unsafe_wrap(Array, pointer(io.cache.data)+(firstbyte-1), (lastbyte-firstbyte+1,); own=false)
+            _cdata = compress(_data; level=io.cache.compressor.level, shuffle=io.cache.compressor.shuffle)
+            cdata = [cdata;_cdata]
+            cdata_io = IOBuffer(cdata; read=true, write=true)
+            seek(cdata_io, 8*ibuffer)
+            write(cdata_io, length(_cdata))
+            close(cdata_io)
+        end
+        close(cdata_io)
+    end
+    t_write = @elapsed write(io.extents[io.cache.extentindex].container, io.extents[io.cache.extentindex].name, cdata)
+    mb = length(io.cache.data)/1_000_000
+    mb_compressed = length(cdata)/1_000_000
+    mbps_write = mb_compressed/t_write
+    mbps_compress = mb/t_compress
+    mbps = mb/(t_write+t_compress)
+    @debug "...data compressed and wrote (effective: $mbps MB/s ; compression: $mbps_compress MB/s ; write: $mbps_write MB/s -- $mb MB; $mb_compressed compressed MB)"
+    nothing
+end
+
+function Base.flush(io::CSeis{T,N,LeftJustifyCompressor}) where {T,N}
+    if io.cache.extentindex == 0
+        return nothing
+    end
+
+    @debug "compressing and writing extent $(io.cache.extentindex)..."
+    t_compress = @elapsed begin
+        for iframe in io.extents[io.cache.extentindex].frameindices
+            leftjustify!(io, getframe(io, iframe)...)
+        end
+
+        compressed_trc_offsets,compressed_hdr_offsets,fmap,nframes,_headerlength = compressed_offsets(io, io.cache.extentindex)
+
+        for (iframe, jframe) in enumerate(io.extents[io.cache.extentindex].frameindices)
+            copyto!(io.cache.data, compressed_hdr_offsets[iframe], io.cache.data, hdrsoffset(io, io.cache.extentindex, jframe), fmap[iframe]*_headerlength)
+        end
+
+        for (iframe, jframe) in enumerate(io.extents[io.cache.extentindex].frameindices)
+            copyto!(io.cache.data, compressed_trc_offsets[iframe], io.cache.data, trcsoffset(io, io.cache.extentindex, jframe), fmap[iframe]*size(io,1)*sizeof(io.traceformat))
+        end
+    end
+    t_write = @elapsed begin
+        cdata = unsafe_wrap(Array, pointer(io.cache.data), (compressed_trc_offsets[end] + fmap[end]*size(io,1)*sizeof(io.traceformat) - 1,); own=false)
+        write(io.extents[io.cache.extentindex].container, io.extents[io.cache.extentindex].name, cdata)
+    end
+
+    mb = length(io.cache.data)/1_000_000
+    mb_compressed = length(cdata)/1_000_000
+    mbps_write = mb_compressed/t_write
+    mbps_compress = mb/t_compress
+    mbps = mb/(t_write+t_compress)
+    @debug "...data compressed and wrote (effective: $mbps MB/s ; compression: $mbps_compress MB/s ; write: $mbps_write MB/s -- $mb MB; $mb_compressed compressed MB)"
     nothing
 end
 
@@ -676,10 +929,11 @@ TeaSeis.prop(io::CSeis, _property::Symbol, _T::Type{T}) where {T} = io.traceprop
 TeaSeis.prop(io::CSeis, _property::String, _T::Type{T}) where {T} = io.traceproperties[Symbol(_property)]::TraceProperty{T}
 TeaSeis.prop(io::CSeis, _property::TracePropertyDef{T}) where {T} = prop(io, _property.label, T)
 
-function foldmap(io::CSeis)
-    nbytes = sizeof(Int)*length(io.extents[io.cache.extentindex].frameindices)
+function foldmap(io::CSeis, extentindex)
+    nbytes = sizeof(Int)*length(io.extents[extentindex].frameindices)
     reinterpret(Int, view(io.cache.data, 1:nbytes))
 end
+foldmap(io::CSeis) = foldmap(io, io.cache.extentindex)
 
 """
     fold(io::CSeis, i)
@@ -720,6 +974,70 @@ function fold!(io::CSeis, fld, idx::CartesianIndex)
     nothing
 end
 fold!(io::CSeis, fld, idx...) = fold!(io, fld, CartesianIndex(idx))
+
+"""
+    regularize!(io::CSeis[, fld], trcs, hdrs)
+
+This is primarily used for compression, but one can also use this as a convenience method
+undo the effect of `leftjustify!`, moving traces from the beginning of the frame to their
+recorded trace location.
+"""
+function TeaSeis.regularize!(io::CSeis, fld, trcs::AbstractArray{Float32, 2}, hdrs::AbstractArray{UInt8, 2})
+    if fld == io.axis_lengths[2]
+        return
+    end
+    nsamp, nhead, ntrcs = size(trcs,1), size(hdrs,1), size(trcs,2)
+    proptrc, proptyp = prop(io, io.axis_propdefs[2]), prop(io, stockprop[:TRC_TYPE])
+    trace_mask = zeros(Int, ntrcs)
+    for i = fld:-1:1
+        ii = get(proptrc, hdrs, i)
+        trace_mask[ii] = 1
+        trcs[:,ii] .= trcs[:,i]
+        hdrs[:,ii] .= hdrs[:,i]
+    end
+    for i = 1:ntrcs
+        if trace_mask[i] == 0
+            set!(proptrc, hdrs, i, i)
+            set!(proptyp, hdrs, i, tracetype[:dead])
+            trcs[:,i] .= 0
+        end
+    end
+end
+TeaSeis.regularize!(io::CSeis, trcs::AbstractArray{Float32, 2}, hdrs::AbstractArray{UInt8, 2}) = regularize!(io, fold(io, hdrs), trcs, hdrs)
+
+"""
+    leftjustify!(io::CSeis, trcs, hdrs)
+
+This is primarily used for compression, but one can also use this as a convenience method
+to move all live traces to the beginning of its frame.
+"""
+function TeaSeis.leftjustify!(io::CSeis, trcs::AbstractArray{Float32, 2}, hdrs::AbstractArray{UInt8, 2})
+    if fold(io, hdrs) == io.axis_lengths[2]
+        return
+    end
+    proptyp = prop(io, stockprop[:TRC_TYPE])
+    j,ntrcs,nsamp,nhead = 1,size(trcs, 2),size(trcs,1),size(hdrs,1)
+    for i = 1:ntrcs
+        if get(proptyp, hdrs, i) != tracetype[:live]
+            for j = i+1:ntrcs
+                if get(proptyp, hdrs, j) == tracetype[:live]
+                    for k = 1:nsamp
+                        tmp = trcs[k,i]
+                        trcs[k,i] = trcs[k,j]
+                        trcs[k,j] = tmp
+                    end
+
+                    for k = 1:nhead
+                        tmp = hdrs[k,i]
+                        hdrs[k,i] = hdrs[k,j]
+                        hdrs[k,j] = tmp
+                    end
+                    break
+                end
+            end
+        end
+    end
+end
 
 """
     get(prop::TraceProperty, hdr::Vector)
@@ -832,24 +1150,24 @@ function hdrsoffset(io::CSeis, extentindex, idx)
     sizeof(Int)*nframes + io.hdrlength*ntraces*(frameidx-frstframe) + 1
 end
 
-function getframetrcs(io::CSeis, idx::CartesianIndex)
-    extentindex = cache!(io, idx)
+function getframetrcs(io::CSeis, extentindex, idx::CartesianIndex)
     data = io.cache.data
 
     frstbyte = trcsoffset(io, extentindex, idx)
     lastbyte = frstbyte + size(io,2)*size(io,1)*sizeof(io.traceformat) - 1
     reshape(reinterpret(io.traceformat, view(data,frstbyte:lastbyte)), :, size(io,2))
 end
-getframetrcs(io, idx...) = getframetrcs(io, CartesianIndex(idx))
+getframetrcs(io::CSeis, idx::CartesianIndex) = getframetrcs(io, cache!(io, idx), idx)
+getframetrcs(io::CSeis, idx...) = getframetrcs(io, CartesianIndex(idx))
 
-function getframehdrs(io::CSeis, idx::CartesianIndex)
-    extentindex = cache!(io, idx)
+function getframehdrs(io::CSeis, extentindex, idx::CartesianIndex)
     data = io.cache.data
 
     frstbyte = hdrsoffset(io, extentindex, idx)
     lastbyte = frstbyte + size(io,2)*io.hdrlength - 1
     reshape(view(data,frstbyte:lastbyte), :, size(io,2))
 end
+getframehdrs(io::CSeis, idx::CartesianIndex) = getframehdrs(io, cache!(io, idx), idx)
 getframehdrs(io::CSeis, idx...) = getframehdrs(io, CartesianIndex(idx))
 
 getframe(io::CSeis, idx) = getframetrcs(io, idx), getframehdrs(io, idx)
