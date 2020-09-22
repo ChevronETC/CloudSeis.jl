@@ -1,6 +1,6 @@
 module CloudSeis
 
-using AbstractStorage, Distributed, JSON, Random, TeaSeis
+using AbstractStorage, Blosc, Distributed, JSON, Random, TeaSeis
 
 struct TracePropertyDef{T}
     label::String
@@ -79,10 +79,22 @@ struct Extent{C<:Container}
     name::String
     container::C
     frameindices::UnitRange{Int}
+    compressionblocks::Vector{UnitRange{Int}}
 end
 
 function Dict(extent::Extent)
-    Dict("name"=>extent.name, "container"=>JSON.parse(json(scrubsession(extent.container))), "firstframe"=>extent.frameindices[1], "lastframe"=>extent.frameindices[end])
+    Dict(
+        "name" => extent.name,
+        "container" => JSON.parse(json(scrubsession(extent.container))),
+        "firstframe" => extent.frameindices[1],
+        "lastframe" => extent.frameindices[end],
+        "compressionblocks_firstindex" => first.(extent.compressionblocks)
+        "compressionblocks_lastindex" => last.(extent.compressionblocks))
+end
+
+function cachesize(io::CSeis, extentindex)
+    nframes = length(io.extents[extentindex].frameindices)
+    nframes*(sizeof(Int) + (io.hdrlength + sizeof(io.traceformat)*size(io,1))*size(io,2))
 end
 
 function Extent(extent::Dict, containers::Vector{C}) where {C<:Container}
@@ -90,7 +102,14 @@ function Extent(extent::Dict, containers::Vector{C}) where {C<:Container}
         if !haskey(extent["container"], "prefix") # for backwards compatability
             extent["container"]["prefix"] = ""
         end
-        Extent(extent["name"], Container(C, extent["container"], session(containers[1])), extent["firstframe"]:extent["lastframe"])
+        if !haskey(extent, compressionblocks_firstindex)
+            compression_blocks = [1:c]
+        end
+        Extent(
+            extent["name"],
+            Container(C, extent["container"], session(containers[1])),
+            extent["firstframe"]:extent["lastframe"],
+            [extent["compressionblocks_firstindex"][i]:extent["compressionblocks_lastindex"][i] for i=1:length(extent["compressionblocks_firstindex"])])
     else # for backwards compatability -- reading data generated with CloudSeis <= 0.2
         Extent(extent["name"], containers[1], extent["firstframe"]:extent["lastframe"])
     end
@@ -102,14 +121,40 @@ const CACHE_NONE = 0
 const CACHE_FOLDMAP = 1
 const CACHE_ALL = 2
 
-mutable struct Cache
+abstract type AbstractCompressor end
+struct BloscCompressor <: AbstractCompressor
+    algorithm::String
+    level::Int
+    nthreads::Int
+    shuffle::Bool
+end
+BloscCompressor(d::Dict) = BloscCompressor(d["algorithm"], d["level"], d["nthreads"], d["shuffle"])
+
+abstract type NotACompressor <: AbstractCompressor end
+NotACompressor(d::Dict) = NotACompressor()
+
+mutable struct Cache{T<:AbstractCompressor}
     extentindex::Int
     data::Vector{UInt8}
+    compressor::T
     type::Int
 end
-Cache() = Cache(0, UInt8[], CACHE_NONE)
+Cache() = Cache(0, UInt8[], true, CACHE_NONE)
+Base.similar(cache::Cache) = Cache(0, UInt8[], cache.iscompressd, CACHE_NONE)
 
-struct CSeis{T,N,C<:Container,U<:NamedTuple,V<:NamedTuple,W<:NamedTuple}
+function compress!(io::CSeis{T,N,Z::NotACompressor})
+end
+
+function decompress!(io::CSeis{T,N,Z::NotACompressor})
+end
+
+function compress!(io::CSeis{T,N,Z::BloscCompressor})
+end
+
+function decompress!(io::CSeis{T,N,Z::BloscCompressor})
+end
+
+struct CSeis{T,N,Z<:AbstractCompressor,C<:Container,U<:NamedTuple,V<:NamedTuple,W<:NamedTuple}
     containers::Vector{C}
     mode::String
     datatype::String
@@ -125,7 +170,7 @@ struct CSeis{T,N,C<:Container,U<:NamedTuple,V<:NamedTuple,W<:NamedTuple}
     dataproperties::W
     geometry::Union{Geometry,Nothing}
     extents::Vector{Extent{C}}
-    cache::Cache
+    cache::Cache{Z}
     hdrlength::Int
 end
 
@@ -146,7 +191,7 @@ function Base.copy(io::CSeis, mode, extents)
         io.dataproperties,
         io.geometry,
         extents,
-        Cache(),
+        similar(io.cache),
         io.hdrlength)
 end
 
@@ -180,6 +225,7 @@ container.  The `axis_lengths` vector is of at-least length 3.
 * `axis_domains::Vector{String}` Domains corresponding to the CloudSeis axes. e.g. `SPACE`, `TIME`, etc.  If not set, then `UNKNOWN` is used.
 * `axis_pstarts::Vector{Float64}` Physical origins for each axis.  If not set, then `0.0` is used for the physical origin of each axis.
 * `axis_pincs::Vector{Float64}` Physical deltas for each axis.  If not set, then `1.0` is used for the physical delta for each axis.
+* `compress=true` Compress the cache before writing to disk.  This is particularly useful for data with variable fold.
 
 # Example
 ## Azure storage
@@ -213,7 +259,8 @@ function csopen(containers::Vector{<:Container}, mode;
         axis_domains = [],
         axis_lengths = [],
         axis_pstarts = [],
-        axis_pincs = [])
+        axis_pincs = [],
+        compress = true)
     kwargs = (
         similarto = similarto,
         datatype = datatype,
@@ -231,7 +278,8 @@ function csopen(containers::Vector{<:Container}, mode;
         axis_domains = axis_domains,
         axis_lengths = axis_lengths,
         axis_pstarts = axis_pstarts,
-        axis_pincs = axis_pincs)
+        axis_pincs = axis_pincs,
+        compress = compress)
     if mode == "r" || mode == "r+"
         _kwargs = process_kwargs(;kwargs...)
         return csopen_read(containers, mode)
@@ -322,7 +370,7 @@ function csopen_write(containers::Vector{<:Container}, mode; kwargs...)
 
         nominal_frames_per_extent, remaining_frames = divrem(nframes, nextents)
 
-        extents = make_extents(containers, nextents, "extents", nominal_frames_per_extent, remaining_frames)
+        extents = make_extents(containers, traceformat, axis_lengths, nextents, "extents", nominal_frames_per_extent, remaining_frames)
     end
 
     description = Dict(
@@ -338,7 +386,16 @@ function csopen_write(containers::Vector{<:Container}, mode; kwargs...)
             "axis_pincs" => axis_pincs),
         "traceproperties"=>[Dict(traceproperty) for traceproperty in traceproperties],
         "dataproperties"=>[Dict(dataproperty) for dataproperty in kwargs[:dataproperties]],
-        "extents"=>Dict.(extents))
+        "extents"=>Dict.(extents),
+        "cache"=>Dict(
+            "iscompressed"=>kwargs[:compress],
+            "compression_library"=>"Blosc.jl",
+            "compression_library_version"=>"0.7.0",
+            "compresssion_library_options"=>Dict(
+                "algorithm"=>"blosclz",
+                "level"=>5,
+                "shuffle"=>true,
+                "nthreads"=>Sys.CPU_THREADS)))
 
     if kwargs[:geometry] != nothing
         merge(description, Dict("geometry"=>Dict(kwargs[:geometry])))
@@ -372,7 +429,8 @@ function process_kwargs(;kwargs...)
         axis_domains = kwargs[:axis_domains],
         axis_lengths = kwargs[:axis_lengths],
         axis_pstarts = kwargs[:axis_pstarts],
-        axis_pincs = kwargs[:axis_pincs]
+        axis_pincs = kwargs[:axis_pincs],
+        compress = kwargs[:compress]
     )
 end
 
@@ -406,7 +464,8 @@ function process_kwargs_similarto(;kwargs...)
         axis_domains = isempty(kwargs[:axis_domains]) ? [io.axis_domains[i] for i=1:length(io.axis_domains)] : kwargs[:axis_domains],
         axis_lengths = isempty(kwargs[:axis_lengths]) ? [io.axis_lengths[i] for i=1:length(io.axis_lengths)] : kwargs[:axis_lengths],
         axis_pstarts = isempty(kwargs[:axis_pstarts]) ? [io.axis_pstarts[i] for i=1:length(io.axis_pstarts)] : kwargs[:axis_pstarts],
-        axis_pincs = isempty(kwargs[:axis_pincs]) ? [io.axis_pincs[i] for i=1:length(io.axis_pincs)] : kwargs[:axis_pincs]
+        axis_pincs = isempty(kwargs[:axis_pincs]) ? [io.axis_pincs[i] for i=1:length(io.axis_pincs)] : kwargs[:axis_pincs],
+        compress = isempty(kwargs[:compress]) ? io.cache.iscompressed : kwargs[:compress]
     )
 end
 
@@ -603,7 +662,11 @@ function cache!(io::CSeis, extentindex::Integer, force=false)
     if isfile(io.extents[extentindex].container, io.extents[extentindex].name)
         @debug "reading extent $extentindex from block-storage..."
         t = @elapsed begin
-            io.cache.data = read!(io.extents[extentindex].container, io.extents[extentindex].name, Vector{UInt8}(undef, filesize(io.extents[extentindex].container, io.extents[extentindex].name)))
+            if io.compress
+
+            else
+                io.cache.data = read!(io.extents[extentindex].container, io.extents[extentindex].name, Vector{UInt8}(undef, filesize(io.extents[extentindex].container, io.extents[extentindex].name)))
+            end
         end
         mb = length(io.cache.data)/1_000_000
         mbps = mb/t
@@ -652,10 +715,35 @@ function cache_foldmap!(io::CSeis, idx::CartesianIndex, force=false)
     cache_foldmap!(io, extentindex, force)
 end
 
-function Base.flush(io::CSeis)
+function Base.flush(io::CSeis{T,N,Z::NotACompressor}) where {T,N}
     if io.cache.extentindex == 0
         return nothing
     end
+    @debug "writing extent $(io.cache.extentindex) to block-storage..."
+    t = @elapsed write(io.extents[io.cache.extentindex].container, io.extents[io.cache.extentindex].name, io.cache.data)
+    mb = length(io.cache.data)/1_000_000
+    mbps = mb/t
+    @debug "...data wrote ($mbps MB/s -- $mb MB)"
+    nothing
+end
+
+function Base.flush(io::CSeis{T,N,Z::BloscCompressor}) where {T,N}
+    if io.cache.extentindex == 0
+        return nothing
+    end
+
+    max_buffer_size = 2_000_000_000
+    nbuffers,nremainder = divrem(length(io.cache.data, max_buffer_size-1)
+    for ibuffer = 1:nbuffers
+        first_byte = 
+        last_byte =
+
+        _data = @view io.cache.data[first_byte:last_byte]
+        compress(_data)
+    end
+    
+
+    compress()
     @debug "writing extent $(io.cache.extentindex) to block-storage..."
     t = @elapsed write(io.extents[io.cache.extentindex].container, io.extents[io.cache.extentindex].name, io.cache.data)
     mb = length(io.cache.data)/1_000_000
