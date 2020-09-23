@@ -79,22 +79,10 @@ struct Extent{C<:Container}
     name::String
     container::C
     frameindices::UnitRange{Int}
-    compressionblocks::Vector{UnitRange{Int}}
 end
 
 function Dict(extent::Extent)
-    Dict(
-        "name" => extent.name,
-        "container" => JSON.parse(json(scrubsession(extent.container))),
-        "firstframe" => extent.frameindices[1],
-        "lastframe" => extent.frameindices[end],
-        "compressionblocks_firstindex" => first.(extent.compressionblocks)
-        "compressionblocks_lastindex" => last.(extent.compressionblocks))
-end
-
-function cachesize(io::CSeis, extentindex)
-    nframes = length(io.extents[extentindex].frameindices)
-    nframes*(sizeof(Int) + (io.hdrlength + sizeof(io.traceformat)*size(io,1))*size(io,2))
+    Dict("name"=>extent.name, "container"=>JSON.parse(json(scrubsession(extent.container))), "firstframe"=>extent.frameindices[1], "lastframe"=>extent.frameindices[end])
 end
 
 function Extent(extent::Dict, containers::Vector{C}) where {C<:Container}
@@ -102,14 +90,7 @@ function Extent(extent::Dict, containers::Vector{C}) where {C<:Container}
         if !haskey(extent["container"], "prefix") # for backwards compatability
             extent["container"]["prefix"] = ""
         end
-        if !haskey(extent, compressionblocks_firstindex)
-            compression_blocks = [1:c]
-        end
-        Extent(
-            extent["name"],
-            Container(C, extent["container"], session(containers[1])),
-            extent["firstframe"]:extent["lastframe"],
-            [extent["compressionblocks_firstindex"][i]:extent["compressionblocks_lastindex"][i] for i=1:length(extent["compressionblocks_firstindex"])])
+        Extent(extent["name"], Container(C, extent["container"], session(containers[1])), extent["firstframe"]:extent["lastframe"])
     else # for backwards compatability -- reading data generated with CloudSeis <= 0.2
         Extent(extent["name"], containers[1], extent["firstframe"]:extent["lastframe"])
     end
@@ -121,38 +102,48 @@ const CACHE_NONE = 0
 const CACHE_FOLDMAP = 1
 const CACHE_ALL = 2
 
+# compression algorithms <--
 abstract type AbstractCompressor end
+
 struct BloscCompressor <: AbstractCompressor
     algorithm::String
     level::Int
-    nthreads::Int
     shuffle::Bool
 end
-BloscCompressor(d::Dict) = BloscCompressor(d["algorithm"], d["level"], d["nthreads"], d["shuffle"])
+BloscCompressor(d::Dict) = BloscCompressor(d["library_options"]["algorithm"], d["library_options"]["level"], d["library_options"]["shuffle"])
+function Dict(c::BloscCompressor)
+    Dict(
+        "method" => "blosc",
+        "library" => "Blosc.jl",
+        "library_version" => "0.7.0",
+        "library_options" => Dict(
+            "algorithm" => c.algorithm,
+            "level" => c.level,
+            "shuffle" => c.shuffle))
+end
 
-abstract type NotACompressor <: AbstractCompressor end
+struct NotACompressor <: AbstractCompressor end
 NotACompressor(d::Dict) = NotACompressor()
+Dict(c::NotACompressor) = Dict("method" => "none")
 
-mutable struct Cache{T<:AbstractCompressor}
+function Compressor(d::Dict)
+    method = get(d, "method", "")
+    if method == "blosc"
+        return BloscCompressor(d)
+    else
+        return NotACompressor(d)
+    end
+end
+# -->
+
+mutable struct Cache{Z<:AbstractCompressor}
     extentindex::Int
     data::Vector{UInt8}
-    compressor::T
+    compressor::Z
     type::Int
 end
-Cache() = Cache(0, UInt8[], true, CACHE_NONE)
-Base.similar(cache::Cache) = Cache(0, UInt8[], cache.iscompressd, CACHE_NONE)
-
-function compress!(io::CSeis{T,N,Z::NotACompressor})
-end
-
-function decompress!(io::CSeis{T,N,Z::NotACompressor})
-end
-
-function compress!(io::CSeis{T,N,Z::BloscCompressor})
-end
-
-function decompress!(io::CSeis{T,N,Z::BloscCompressor})
-end
+Cache(compressor::AbstractCompressor) = Cache(0, UInt8[], compressor, CACHE_NONE)
+Base.similar(cache::Cache{BloscCompressor}) = Cache(0, UInt8[], copy(cache.compressor), CACHE_NONE)
 
 struct CSeis{T,N,Z<:AbstractCompressor,C<:Container,U<:NamedTuple,V<:NamedTuple,W<:NamedTuple}
     containers::Vector{C}
@@ -225,7 +216,7 @@ container.  The `axis_lengths` vector is of at-least length 3.
 * `axis_domains::Vector{String}` Domains corresponding to the CloudSeis axes. e.g. `SPACE`, `TIME`, etc.  If not set, then `UNKNOWN` is used.
 * `axis_pstarts::Vector{Float64}` Physical origins for each axis.  If not set, then `0.0` is used for the physical origin of each axis.
 * `axis_pincs::Vector{Float64}` Physical deltas for each axis.  If not set, then `1.0` is used for the physical delta for each axis.
-* `compress=true` Compress the cache before writing to disk.  This is particularly useful for data with variable fold.
+* `compressor="none"` Compress the cache before writing to disk.  This is particularly useful for data with variable fold.  chooose from: ("none", "blosc")
 
 # Example
 ## Azure storage
@@ -260,7 +251,7 @@ function csopen(containers::Vector{<:Container}, mode;
         axis_lengths = [],
         axis_pstarts = [],
         axis_pincs = [],
-        compress = true)
+        compressor = "none")
     kwargs = (
         similarto = similarto,
         datatype = datatype,
@@ -279,7 +270,7 @@ function csopen(containers::Vector{<:Container}, mode;
         axis_lengths = axis_lengths,
         axis_pstarts = axis_pstarts,
         axis_pincs = axis_pincs,
-        compress = compress)
+        compressor = compressor)
     if mode == "r" || mode == "r+"
         _kwargs = process_kwargs(;kwargs...)
         return csopen_read(containers, mode)
@@ -370,7 +361,7 @@ function csopen_write(containers::Vector{<:Container}, mode; kwargs...)
 
         nominal_frames_per_extent, remaining_frames = divrem(nframes, nextents)
 
-        extents = make_extents(containers, traceformat, axis_lengths, nextents, "extents", nominal_frames_per_extent, remaining_frames)
+        extents = make_extents(containers, nextents, "extents", nominal_frames_per_extent, remaining_frames)
     end
 
     description = Dict(
@@ -387,15 +378,7 @@ function csopen_write(containers::Vector{<:Container}, mode; kwargs...)
         "traceproperties"=>[Dict(traceproperty) for traceproperty in traceproperties],
         "dataproperties"=>[Dict(dataproperty) for dataproperty in kwargs[:dataproperties]],
         "extents"=>Dict.(extents),
-        "cache"=>Dict(
-            "iscompressed"=>kwargs[:compress],
-            "compression_library"=>"Blosc.jl",
-            "compression_library_version"=>"0.7.0",
-            "compresssion_library_options"=>Dict(
-                "algorithm"=>"blosclz",
-                "level"=>5,
-                "shuffle"=>true,
-                "nthreads"=>Sys.CPU_THREADS)))
+        "compressor"=>Dict(kwargs[:compressor]))
 
     if kwargs[:geometry] != nothing
         merge(description, Dict("geometry"=>Dict(kwargs[:geometry])))
@@ -430,7 +413,7 @@ function process_kwargs(;kwargs...)
         axis_lengths = kwargs[:axis_lengths],
         axis_pstarts = kwargs[:axis_pstarts],
         axis_pincs = kwargs[:axis_pincs],
-        compress = kwargs[:compress]
+        compress = (kwargs[:compress] == "none" || kwargs[:compress] == "") ? NotACompressor() : BloscCompressor("blosclz", 5, true)
     )
 end
 
@@ -465,7 +448,7 @@ function process_kwargs_similarto(;kwargs...)
         axis_lengths = isempty(kwargs[:axis_lengths]) ? [io.axis_lengths[i] for i=1:length(io.axis_lengths)] : kwargs[:axis_lengths],
         axis_pstarts = isempty(kwargs[:axis_pstarts]) ? [io.axis_pstarts[i] for i=1:length(io.axis_pstarts)] : kwargs[:axis_pstarts],
         axis_pincs = isempty(kwargs[:axis_pincs]) ? [io.axis_pincs[i] for i=1:length(io.axis_pincs)] : kwargs[:axis_pincs],
-        compress = isempty(kwargs[:compress]) ? io.cache.iscompressed : kwargs[:compress]
+        compress = isempty(kwargs[:compress]) ? similar(io.cache.compressor) : (kwargs[:compress] == "none" ? NotACompressor() : BloscCompressor("blosclz", 5, true))
     )
 end
 
@@ -487,7 +470,7 @@ function csopen_from_description(containers, mode, description, traceproperties)
         get_data_properties(description),
         get_geometry(description),
         [Extent(extent, containers) for extent in description["extents"]],
-        Cache(),
+        Cache(Compressor(get(description, "compressor", Dict()))),
         headerlength(traceproperties))
 end
 
@@ -650,6 +633,44 @@ function cachesize_foldmap(io::CSeis, extentindex)
     nframes*sizeof(Int)
 end
 
+function cache_from_file!(io::CSeis{T,N,NotACompressor}, extentindex) where {T,N}
+    @debug "reading extent $extentindex from block-storage..."
+    t = @elapsed begin
+        io.cache.data = read!(io.extents[extentindex].container, io.extents[extentindex].name, Vector{UInt8}(undef, filesize(io.extents[extentindex].container, io.extents[extentindex].name)))
+    end
+    mb = length(io.cache.data)/1_000_000
+    mbps = mb/t
+    @debug "...data read ($mbps MB/s -- $mb MB)"
+    nothing
+end
+
+function cache_from_file!(io::CSeis{T,N,BloscCompressor}, extentindex) where {T,N}
+    @debug "reading and decompressing $extentindex from block-storage..."
+    t_read = @elapsed begin
+        cdata = read!(io.extents[extentindex].container, io.extents[extentindex].name, Vector{UInt8}(undef, filesize(io.extents[extentindex].container, io.extents[extentindex].name)))
+    end
+
+    t_decompress = @elapsed begin
+        io_cdata = IOBuffer(cdata)
+        nbuffers = read(io_cdata, Int)
+        buffersize = read!(io_cdata, Vector{Int}(nbuffers))
+        close(io_cdata)
+
+        io.cache.data = UInt8[]
+        for ibuffer = 1:nbuffers
+            cbuffer = read!(io, Vector{UInt8}(undef, buffersize[ibuffer]))
+            io.cache.data = [io.cache.data;decompress(UInt8, read!(io, Vector{UInt8}(undef, buffersize_compressed[ibuffer])))]
+        end
+    end
+    mb = length(io.cache.data)
+    mb_compressed = length(cdata)
+    mbps_read = mb_compressed/t_read
+    mbps_decompress = mb / t_decompress
+    mbps = mb / (t_read + t_decompress)
+    @debug "...data read and decompressed ($mbps MB/s; $mpbs_read MB/s read; $mbps_decompress MB/s decompress -- $mb MB, $mb_compressed compressed MB"
+    nothing
+end
+
 function cache!(io::CSeis, extentindex::Integer, force=false)
     if extentindex == io.cache.extentindex && io.cache.type == CACHE_ALL && !force
         return extentindex
@@ -660,17 +681,7 @@ function cache!(io::CSeis, extentindex::Integer, force=false)
     end
 
     if isfile(io.extents[extentindex].container, io.extents[extentindex].name)
-        @debug "reading extent $extentindex from block-storage..."
-        t = @elapsed begin
-            if io.compress
-
-            else
-                io.cache.data = read!(io.extents[extentindex].container, io.extents[extentindex].name, Vector{UInt8}(undef, filesize(io.extents[extentindex].container, io.extents[extentindex].name)))
-            end
-        end
-        mb = length(io.cache.data)/1_000_000
-        mbps = mb/t
-        @debug "...data read ($mbps MB/s -- $mb MB)"
+        cache_from_file!(io, extentindex)
     else
         @debug "creating cache..."
         io.cache.data = zeros(UInt8, cachesize(io, extentindex))
@@ -715,7 +726,7 @@ function cache_foldmap!(io::CSeis, idx::CartesianIndex, force=false)
     cache_foldmap!(io, extentindex, force)
 end
 
-function Base.flush(io::CSeis{T,N,Z::NotACompressor}) where {T,N}
+function Base.flush(io::CSeis{T,N,NotACompressor}) where {T,N}
     if io.cache.extentindex == 0
         return nothing
     end
@@ -727,28 +738,46 @@ function Base.flush(io::CSeis{T,N,Z::NotACompressor}) where {T,N}
     nothing
 end
 
-function Base.flush(io::CSeis{T,N,Z::BloscCompressor}) where {T,N}
+function Base.flush(io::CSeis{T,N,BloscCompressor}) where {T,N}
     if io.cache.extentindex == 0
         return nothing
     end
 
-    max_buffer_size = 2_000_000_000
-    nbuffers,nremainder = divrem(length(io.cache.data, max_buffer_size-1)
-    for ibuffer = 1:nbuffers
-        first_byte = 
-        last_byte =
-
-        _data = @view io.cache.data[first_byte:last_byte]
-        compress(_data)
+    function flush_blosc_buffer_byterange(iblock, block_size, block_remainder)
+        isremainder = iblock <= block_remainder
+        firstbyte = (iblock - 1)*block_size + (isremainder ? iblock : block_remainder + 1)
+        lastbyte = firstbyte + (isremainder ? block_size : block_size - 1)
+        firstbyte,lastbyte
     end
-    
 
-    compress()
-    @debug "writing extent $(io.cache.extentindex) to block-storage..."
-    t = @elapsed write(io.extents[io.cache.extentindex].container, io.extents[io.cache.extentindex].name, io.cache.data)
+    @debug "compressing and writing extent $(io.cache.extentindex) to block-storage..."
+    t_compress = @elapsed begin
+        Blosc.set_num_threads(Sys.CPU_THREADS)
+        Blosc.set_compressor(io.cache.compressor.algorithm)
+
+        buffersize = 1_999_999_999
+        nbuffers,nremainder = divrem(length(io.cache.data), buffersize)
+
+        buffer_lengths = zeros(Int, nbuffers)
+        cdata = zeros(UInt8, 8*(1 + buffer_lengths)) # store number of buffers and length of each compressed buffer
+        cdata_io = Buffer(cdata)
+        write(cdata_io, nbuffers)
+        for ibuffer = 1:nbuffers
+            firstbyte,lastbyte = flush_blosc_buffer_byterange(ibuffer, buffersize, nremainder)
+            _data = @view io.cache.data[first_byte:last_byte]
+            _cdata = compress(_data; level=io.cache.compressor.level, shuffle=io.cache.compressor.shuffle)
+            cdata = [cdata;_cdata]
+            write(cdata_io, length(_cdata))
+        end
+        close(cdata_io)
+    end
+    t_write = @elapsed write(io.extents[io.cache.extentindex].container, io.extents[io.cache.extentindex].name, cdata)
     mb = length(io.cache.data)/1_000_000
-    mbps = mb/t
-    @debug "...data wrote ($mbps MB/s -- $mb MB)"
+    mb_compressed = length(cdata)/1_000_000
+    mbps_write = mb_compressed/t_write
+    mbps_compress = mb/t_compress
+    mpbs_effective = mb/(t_write+t_compress)
+    @debug "...data compressed and wrote (effective: $mbps MB/s ; compression: $mbps MB/s ; write: $mbps_write $mbps MB/s -- $mb MB; $mb_compressed compressed MB)"
     nothing
 end
 
