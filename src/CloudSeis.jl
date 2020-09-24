@@ -129,7 +129,7 @@ Dict(c::NotACompressor) = Dict("method" => "none")
 Base.copy(c::NotACompressor) = NotACompressor()
 
 function Compressor(d::Dict)
-    method = get(d, "method", "")
+    method = get(d, "method", "") # enables backwards compatability
     if method == "blosc"
         return BloscCompressor(d)
     else
