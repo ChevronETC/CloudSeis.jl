@@ -765,7 +765,7 @@ function Base.flush(io::CSeis{T,N,BloscCompressor}) where {T,N}
         Blosc.set_num_threads(Sys.CPU_THREADS)
         Blosc.set_compressor(io.cache.compressor.algorithm)
 
-        maxbuffersize = 2_000_000_000
+        maxbuffersize = 2_000_000_000 # This is due to a limitation of the Blosc library.
         cachesize = length(io.cache.data)
         nbuffers,remaining_bytes = divrem(cachesize, maxbuffersize)
         remaining_bytes > 0 && (nbuffers += 1)
