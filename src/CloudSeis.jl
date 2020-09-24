@@ -753,10 +753,10 @@ function Base.flush(io::CSeis{T,N,BloscCompressor}) where {T,N}
         return nothing
     end
 
-    function flush_blosc_buffer_byterange(iblock, block_size, block_remainder)
-        isremainder = iblock <= block_remainder
-        firstbyte = (iblock - 1)*block_size + (isremainder ? iblock : block_remainder + 1)
-        lastbyte = firstbyte + (isremainder ? block_size : block_size - 1)
+    function flush_blosc_buffer_byterange(ibuffer, buffer_size, buffer_remainder)
+        isremainder = ibuffer <= buffer_remainder
+        firstbyte = (ibuffer - 1)*buffer_size + (isremainder ? ibuffer : buffer_remainder + 1)
+        lastbyte = firstbyte + (isremainder ? buffer_size : buffer_size - 1)
         firstbyte,lastbyte
     end
 
@@ -767,9 +767,9 @@ function Base.flush(io::CSeis{T,N,BloscCompressor}) where {T,N}
 
         maxbuffersize = 2_000_000_000
         cachesize = length(io.cache.data)
-        nbuffers,nremainder = divrem(cachesize, maxbuffersize)
-        nremainder > 0 && (nbuffers += 1)
-        buffersize,nremainder = divrem(cachesize, nbuffers)
+        nbuffers,remaining_bytes = divrem(cachesize, maxbuffersize)
+        remaining_bytes > 0 && (nbuffers += 1)
+        buffersize,buffer_remainder = divrem(cachesize, nbuffers)
 
         buffer_lengths = zeros(Int, nbuffers)
         cdata = zeros(UInt8, 8*(1 + nbuffers)) # store number of buffers and length of each compressed buffer
@@ -777,7 +777,7 @@ function Base.flush(io::CSeis{T,N,BloscCompressor}) where {T,N}
         write(cdata_io, nbuffers)
         close(cdata_io)
         for ibuffer = 1:nbuffers
-            firstbyte,lastbyte = flush_blosc_buffer_byterange(ibuffer, buffersize, nremainder)
+            firstbyte,lastbyte = flush_blosc_buffer_byterange(ibuffer, buffersize, buffer_remainder)
             _data = unsafe_wrap(Array, pointer(io.cache.data)+(firstbyte-1), (lastbyte-firstbyte+1,))
             _cdata = compress(_data; level=io.cache.compressor.level, shuffle=io.cache.compressor.shuffle)
             cdata = [cdata;_cdata]
