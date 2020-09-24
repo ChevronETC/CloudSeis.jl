@@ -32,14 +32,15 @@ function new_container(cloud, foldername)
     end
 end
 
-#const clouds = ("AZ","AZ2","POSIX")
+# const clouds = ("AZ","AZ2","POSIX")
 const clouds = ("POSIX",)
+const compressors = ("none","blosc")
 
-@testset "CloudSeis, cloud=$cloud" for cloud in clouds
+@testset "CloudSeis, cloud=$cloud, compresser=$compressor" for cloud in clouds, compressor in compressors
     @testset "allocframe" begin
         sleep(1)
         r = lowercase(randstring(MersenneTwister(millisecond(now())+0)))
-        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12])
+        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], compressor=compressor)
         t,h = allocframe(io)
 
         @test size(t) == (10,11)
@@ -55,7 +56,7 @@ const clouds = ("POSIX",)
     @testset "writeframe/readframe with headers" begin
         sleep(1)
         r = lowercase(randstring(MersenneTwister(millisecond(now())+1)))
-        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12])
+        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], compressor=compressor)
 
         x = rand(Float32,10,11)
 
@@ -80,7 +81,7 @@ const clouds = ("POSIX",)
     @testset "writeframe/readframe with index" begin
         sleep(1)
         r = lowercase(randstring(MersenneTwister(millisecond(now())+2)))
-        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], dataproperties=[DataProperty("P",1)])
+        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], dataproperties=[DataProperty("P",1)], compressor=compressor)
 
         x = rand(Float32,10,11)
 
@@ -100,7 +101,7 @@ const clouds = ("POSIX",)
     @testset "write" begin
         sleep(1)
         r = lowercase(randstring(MersenneTwister(millisecond(now())+3)))
-        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12])
+        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], compressor=compressor)
 
         x = rand(Float32,10,11,12)
         write(io, x, :, :, :)
@@ -118,7 +119,7 @@ const clouds = ("POSIX",)
     @testset "write, multiple extents" begin
         sleep(1)
         r = lowercase(randstring(MersenneTwister(millisecond(now())+4)))
-        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], frames_per_extent=1)
+        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], frames_per_extent=1, compressor=compressor)
 
         x = rand(Float32,10,11,12)
         write(io, x, :, :, :)
@@ -136,7 +137,7 @@ const clouds = ("POSIX",)
     @testset "readtrcs" begin
         sleep(1)
         r = lowercase(randstring(MersenneTwister(millisecond(now())+5)))
-        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12])
+        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], compressor=compressor)
 
         x = rand(Float32,10,11,12)
         write(io, x, :, :, :)
@@ -153,7 +154,7 @@ const clouds = ("POSIX",)
     @testset "readhdrs" begin
         sleep(1)
         r = lowercase(randstring(MersenneTwister(millisecond(now())+6)))
-        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12])
+        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], compressor=compressor)
 
         x = rand(Float32,10,11,12)
         write(io, x, :, :, :)
@@ -173,7 +174,7 @@ const clouds = ("POSIX",)
     @testset "readhdrs!" begin
         sleep(1)
         r = lowercase(randstring(MersenneTwister(millisecond(now())+7)))
-        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12])
+        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], compressor=compressor)
 
         x = rand(Float32,10,11,12)
         write(io, x, :, :, :)
@@ -193,7 +194,7 @@ const clouds = ("POSIX",)
     @testset "partial read for foldmap" begin
         sleep(1)
         r = lowercase(randstring(MersenneTwister(millisecond(now())+6)))
-        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12])
+        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], compressor=compressor)
 
         x = rand(Float32,10,11,12)
         write(io, x, :, :, :)
@@ -213,7 +214,8 @@ const clouds = ("POSIX",)
         io = csopen(new_container(cloud, "test-$r-cs"), "w",
             axis_pincs=[0.1,0.2,0.3],
             axis_lengths=[10,11,12],
-            dataproperties=[DataProperty("P",1)])
+            dataproperties=[DataProperty("P",1)],
+            compressor=compressor)
         close(io)
 
         _io = csopen(new_container(cloud, "test-$r-sim-cs"), "w", similarto=new_container(cloud, "test-$r-cs"))
@@ -232,7 +234,8 @@ const clouds = ("POSIX",)
         io = csopen(new_container(cloud, "test-$r-cs"), "w",
             axis_pincs=[0.1,0.2,0.3],
             axis_lengths=[10,11,12],
-            dataproperties=[DataProperty("P",1)])
+            dataproperties=[DataProperty("P",1)],
+            compressor=compressor)
         @test length(io.extents) == 1
         close(io)
 
@@ -248,7 +251,7 @@ const clouds = ("POSIX",)
     @testset "propdefs" begin
         sleep(1)
         r = lowercase(randstring(MersenneTwister(millisecond(now())+8)))
-        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12])
+        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], compressor=compressor)
         @test propdefs(io,1).label == "SAMPLE"
         @test propdefs(io,2).label == "TRACE"
         @test propdefs(io,3).label == "FRAME"
@@ -262,7 +265,7 @@ const clouds = ("POSIX",)
     @testset "props" begin
         sleep(1)
         r = lowercase(randstring(MersenneTwister(millisecond(now())+9)))
-        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12])
+        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], compressor=compressor)
         @test props(io,1).def.label == "SAMPLE"
         @test props(io,2).def.label == "TRACE"
         @test props(io,3).def.label == "FRAME"
@@ -277,7 +280,7 @@ const clouds = ("POSIX",)
         sleep(1)
         r = lowercase(randstring(MersenneTwister(millisecond(now())+10)))
         pdef = TracePropertyDef("X","XX",Vector{Float64},2)
-        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], tracepropertydefs=[pdef])
+        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], tracepropertydefs=[pdef], compressor=compressor)
         t,h = allocframe(io)
         for i = 1:11
             set!(prop(io,"TRACE"), h, i, i)
@@ -301,7 +304,7 @@ const clouds = ("POSIX",)
     @testset "pincs" begin
         sleep(1)
         r = lowercase(randstring(MersenneTwister(millisecond(now())+11)))
-        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_pincs=[1.0,2.0,3.0])
+        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_pincs=[1.0,2.0,3.0], compressor=compressor)
         @test pincs(io,1) ≈ 1.0
         @test pincs(io,2) ≈ 2.0
         @test pincs(io,3) ≈ 3.0
@@ -315,7 +318,7 @@ const clouds = ("POSIX",)
     @testset "pstarts" begin
         sleep(1)
         r = lowercase(randstring(MersenneTwister(millisecond(now())+12)))
-        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_pstarts=[1.0,2.0,3.0])
+        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_pstarts=[1.0,2.0,3.0], compressor=compressor)
         @test pstarts(io,1) ≈ 1.0
         @test pstarts(io,2) ≈ 2.0
         @test pstarts(io,3) ≈ 3.0
@@ -329,7 +332,7 @@ const clouds = ("POSIX",)
     @testset "units" begin
         sleep(1)
         r = lowercase(randstring(MersenneTwister(millisecond(now())+13)))
-        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_units=["X","Y","Z"])
+        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_units=["X","Y","Z"], compressor=compressor)
         @test units(io,1) == "X"
         @test units(io,2) == "Y"
         @test units(io,3) == "Z"
@@ -343,7 +346,7 @@ const clouds = ("POSIX",)
     @testset "domains" begin
         sleep(1)
         r = lowercase(randstring(MersenneTwister(millisecond(now())+14)))
-        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_domains=["X","Y","Z"])
+        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_domains=["X","Y","Z"], compressor=compressor)
         @test domains(io,1) == "X"
         @test domains(io,2) == "Y"
         @test domains(io,3) == "Z"
@@ -365,7 +368,7 @@ const clouds = ("POSIX",)
             v1=3,vn=4,
             w1=5,wn=6)
         r = lowercase(randstring(MersenneTwister(millisecond(now())+15)))
-        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], geometry=g)
+        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], geometry=g, compressor=compressor)
 
         _g = geometry(io)
         @test g.ox ≈ 1.0
@@ -394,7 +397,7 @@ const clouds = ("POSIX",)
     @testset "in" begin
         sleep(1)
         r = lowercase(randstring(MersenneTwister(millisecond(now())+16)))
-        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12])
+        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], compressor=compressor)
 
         @test in(stockprop[:TRACE], io) == true
         @test in(stockprop[:CDP],io) == false
@@ -406,7 +409,7 @@ const clouds = ("POSIX",)
     @testset "dataproperty" begin
         sleep(1)
         r = lowercase(randstring(MersenneTwister(millisecond(now())+17)))
-        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], dataproperties=[DataProperty("X",1)])
+        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], dataproperties=[DataProperty("X",1)], compressor=compressor)
 
         @test dataproperty(io, "X") == 1
 
@@ -417,7 +420,7 @@ const clouds = ("POSIX",)
     @testset "hasdataproperty" begin
         sleep(1)
         r = lowercase(randstring(MersenneTwister(millisecond(now())+18)))
-        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], dataproperties=[DataProperty("X",1)])
+        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], dataproperties=[DataProperty("X",1)], compressor=compressor)
 
         @test hasdataproperty(io, "X") == true
         @test hasdataproperty(io, "Y") == false
@@ -429,9 +432,9 @@ const clouds = ("POSIX",)
     @testset "copy!" begin
         sleep(1)
         r1 = lowercase(randstring(MersenneTwister(millisecond(now())+19),4))
-        io1 = csopen(new_container(cloud, "test-$r1-cs"), "w", axis_lengths=[10,11,12])
+        io1 = csopen(new_container(cloud, "test-$r1-cs"), "w", axis_lengths=[10,11,12], compressor=compressor)
         r2 = lowercase(randstring(MersenneTwister(millisecond(now())+20),4))
-        io2 = csopen(new_container(cloud, "test-$r2-cs"), "w", axis_lengths=[10,11,12])
+        io2 = csopen(new_container(cloud, "test-$r2-cs"), "w", axis_lengths=[10,11,12], compressor=compressor)
 
         h1 = allocframehdrs(io1)
         h2 = allocframehdrs(io2)
@@ -459,7 +462,7 @@ const clouds = ("POSIX",)
     @testset "reduce" begin
         sleep(1)
         r = lowercase(randstring(MersenneTwister(millisecond(now())+21),4))
-        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,50], frames_per_extent=2)
+        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,50], frames_per_extent=2, compressor=compressor)
 
         @test length(io.extents) == 25
 
@@ -471,11 +474,11 @@ const clouds = ("POSIX",)
         end
         close(io)
 
-        io = csopen(new_container(cloud, "test-$r-cs"))
+        io = csopen(new_container(cloud, "test-$r-cs"), compressor=compressor)
         reduce(io)
         close(io)
 
-        io = csopen(new_container(cloud, "test-$r-cs"))
+        io = csopen(new_container(cloud, "test-$r-cs"), compressor=compressor)
         for i = 1:50
             t,h = readframe(io, i)
             @test t ≈ T[:,:,i]
@@ -490,7 +493,7 @@ const clouds = ("POSIX",)
     @testset "reduce, parallel" begin
         sleep(1)
         r = lowercase(randstring(MersenneTwister(millisecond(now())+22),4))
-        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,50], frames_per_extent=2)
+        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,50], frames_per_extent=2, compressor=compressor)
 
         @test length(io.extents) == 25
 
@@ -524,10 +527,10 @@ const clouds = ("POSIX",)
     @testset "robust cscreate" begin
         sleep(1)
         r = lowercase(randstring(MersenneTwister(millisecond(now())+23),4))
-        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], force=true)
+        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], force=true, compressor=compressor)
         writeframe(io, rand(Float32,10,11), 1)
         close(io)
-        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], force=true)
+        io = csopen(new_container(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], force=true, compressor=compressor)
         writeframe(io, rand(Float32,10,11), 1)
         close(io)
     end

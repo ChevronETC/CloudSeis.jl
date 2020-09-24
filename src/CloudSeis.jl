@@ -647,29 +647,28 @@ function cache_from_file!(io::CSeis{T,N,NotACompressor}, extentindex) where {T,N
 end
 
 function cache_from_file!(io::CSeis{T,N,BloscCompressor}, extentindex) where {T,N}
-    @debug "reading and decompressing $extentindex from block-storage..."
+    @debug "reading and decompressing extent $extentindex..."
     t_read = @elapsed begin
         cdata = read!(io.extents[extentindex].container, io.extents[extentindex].name, Vector{UInt8}(undef, filesize(io.extents[extentindex].container, io.extents[extentindex].name)))
     end
 
     t_decompress = @elapsed begin
-        io_cdata = IOBuffer(cdata)
+        io_cdata = IOBuffer(cdata; read=true, write=false)
         nbuffers = read(io_cdata, Int)
-        buffersize = read!(io_cdata, Vector{Int}(nbuffers))
-        close(io_cdata)
+        buffersize = read!(io_cdata, Vector{Int}(undef, nbuffers))
 
         io.cache.data = UInt8[]
         for ibuffer = 1:nbuffers
-            cbuffer = read!(io, Vector{UInt8}(undef, buffersize[ibuffer]))
-            io.cache.data = [io.cache.data;decompress(UInt8, read!(io, Vector{UInt8}(undef, buffersize_compressed[ibuffer])))]
+            cbuffer = read!(io_cdata, Vector{UInt8}(undef, buffersize[ibuffer]))
+            io.cache.data = [io.cache.data;decompress(UInt8, cbuffer)]
         end
     end
-    mb = length(io.cache.data)
-    mb_compressed = length(cdata)
+    mb = length(io.cache.data) / 1_000_000
+    mb_compressed = length(cdata) / 1_000_000
     mbps_read = mb_compressed/t_read
     mbps_decompress = mb / t_decompress
     mbps = mb / (t_read + t_decompress)
-    @debug "...data read and decompressed ($mbps MB/s; $mpbs_read MB/s read; $mbps_decompress MB/s decompress -- $mb MB, $mb_compressed compressed MB"
+    @debug "...data read and decompressed (effective: $mbps MB/s; decompression: $mbps_decompress MB/s; read: $mbps_read MB/s -- $mb MB; $mb_compressed compressed MB)"
     nothing
 end
 
@@ -702,7 +701,7 @@ end
 
 cache(io::CSeis) = io.cache
 
-function cache_foldmap!(io::CSeis, extentindex::Integer, force=false)
+function cache_foldmap!(io::CSeis{T,N,NotACompressor}, extentindex::Integer, force=false) where {T,N}
     _partialcache_error() = error("partial caching is only allowed in read-only \"r\" mode")
     io.mode == "r" || _partialcache_error()
 
@@ -720,6 +719,15 @@ function cache_foldmap!(io::CSeis, extentindex::Integer, force=false)
     io.cache.extentindex = extentindex
     io.cache.type = CACHE_FOLDMAP
 
+    extentindex
+end
+
+function cache_foldmap!(io::CSeis{T,N,BloscCompressor}, extentindex::Integer, force=false) where {T,N}
+    if extentindex == io.cache.extentindex && io.cache.type ∈ CACHE_ALL && !force
+        return extentindex
+    end
+    # TODO - we can't to a partial cache here because of how the compression works.
+    cache!(io, extentindex, force)
     extentindex
 end
 
@@ -752,26 +760,31 @@ function Base.flush(io::CSeis{T,N,BloscCompressor}) where {T,N}
         firstbyte,lastbyte
     end
 
-    @debug "compressing and writing extent $(io.cache.extentindex) to block-storage..."
+    @debug "compressing and writing extent $(io.cache.extentindex)..."
     t_compress = @elapsed begin
         Blosc.set_num_threads(Sys.CPU_THREADS)
         Blosc.set_compressor(io.cache.compressor.algorithm)
 
         maxbuffersize = 2_000_000_000
+        cachesize = length(io.cache.data)
         nbuffers,nremainder = divrem(cachesize, maxbuffersize)
         nremainder > 0 && (nbuffers += 1)
         buffersize,nremainder = divrem(cachesize, nbuffers)
 
         buffer_lengths = zeros(Int, nbuffers)
         cdata = zeros(UInt8, 8*(1 + nbuffers)) # store number of buffers and length of each compressed buffer
-        cdata_io = IOBuffer(cdata; read=false, write=true)
+        cdata_io = IOBuffer(cdata; read=true, write=true)
         write(cdata_io, nbuffers)
+        close(cdata_io)
         for ibuffer = 1:nbuffers
             firstbyte,lastbyte = flush_blosc_buffer_byterange(ibuffer, buffersize, nremainder)
             _data = unsafe_wrap(Array, pointer(io.cache.data)+(firstbyte-1), (lastbyte-firstbyte+1,))
             _cdata = compress(_data; level=io.cache.compressor.level, shuffle=io.cache.compressor.shuffle)
             cdata = [cdata;_cdata]
+            cdata_io = IOBuffer(cdata; read=true, write=true)
+            seek(cdata_io, 8*ibuffer)
             write(cdata_io, length(_cdata))
+            close(cdata_io)
         end
         close(cdata_io)
     end
@@ -780,8 +793,8 @@ function Base.flush(io::CSeis{T,N,BloscCompressor}) where {T,N}
     mb_compressed = length(cdata)/1_000_000
     mbps_write = mb_compressed/t_write
     mbps_compress = mb/t_compress
-    mpbs_effective = mb/(t_write+t_compress)
-    @debug "...data compressed and wrote (effective: $mbps MB/s ; compression: $mbps MB/s ; write: $mbps_write $mbps MB/s -- $mb MB; $mb_compressed compressed MB)"
+    mbps = mb/(t_write+t_compress)
+    @debug "...data compressed and wrote (effective: $mbps MB/s ; compression: $mbps_compress MB/s ; write: $mbps_write MB/s -- $mb MB; $mb_compressed compressed MB)"
     nothing
 end
 
