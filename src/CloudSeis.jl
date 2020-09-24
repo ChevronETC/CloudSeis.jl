@@ -757,16 +757,18 @@ function Base.flush(io::CSeis{T,N,BloscCompressor}) where {T,N}
         Blosc.set_num_threads(Sys.CPU_THREADS)
         Blosc.set_compressor(io.cache.compressor.algorithm)
 
-        buffersize = 1_999_999_999
-        nbuffers,nremainder = divrem(length(io.cache.data), buffersize)
+        maxbuffersize = 2_000_000_000
+        nbuffers,nremainder = divrem(cachesize, maxbuffersize)
+        nremainder > 0 && (nbuffers += 1)
+        buffersize,nremainder = divrem(cachesize, nbuffers)
 
         buffer_lengths = zeros(Int, nbuffers)
-        cdata = zeros(UInt8, 8*(1 + buffer_lengths)) # store number of buffers and length of each compressed buffer
-        cdata_io = Buffer(cdata)
+        cdata = zeros(UInt8, 8*(1 + nbuffers)) # store number of buffers and length of each compressed buffer
+        cdata_io = IOBuffer(cdata; read=false, write=true)
         write(cdata_io, nbuffers)
         for ibuffer = 1:nbuffers
             firstbyte,lastbyte = flush_blosc_buffer_byterange(ibuffer, buffersize, nremainder)
-            _data = @view io.cache.data[first_byte:last_byte]
+            _data = unsafe_wrap(Array, pointer(io.cache.data)+(firstbyte-1), (lastbyte-firstbyte+1,))
             _cdata = compress(_data; level=io.cache.compressor.level, shuffle=io.cache.compressor.shuffle)
             cdata = [cdata;_cdata]
             write(cdata_io, length(_cdata))
