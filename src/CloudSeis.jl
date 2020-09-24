@@ -121,10 +121,12 @@ function Dict(c::BloscCompressor)
             "level" => c.level,
             "shuffle" => c.shuffle))
 end
+Base.copy(c::BloscCompressor) = BloscCompressor(c.algorithm, c.level, c.shuffle)
 
 struct NotACompressor <: AbstractCompressor end
 NotACompressor(d::Dict) = NotACompressor()
 Dict(c::NotACompressor) = Dict("method" => "none")
+Base.copy(c::NotACompressor) = NotACompressor()
 
 function Compressor(d::Dict)
     method = get(d, "method", "")
@@ -143,7 +145,7 @@ mutable struct Cache{Z<:AbstractCompressor}
     type::Int
 end
 Cache(compressor::AbstractCompressor) = Cache(0, UInt8[], compressor, CACHE_NONE)
-Base.similar(cache::Cache{BloscCompressor}) = Cache(0, UInt8[], copy(cache.compressor), CACHE_NONE)
+Base.similar(cache::Cache) = Cache(0, UInt8[], copy(cache.compressor), CACHE_NONE)
 
 struct CSeis{T,N,Z<:AbstractCompressor,C<:Container,U<:NamedTuple,V<:NamedTuple,W<:NamedTuple}
     containers::Vector{C}
@@ -413,7 +415,7 @@ function process_kwargs(;kwargs...)
         axis_lengths = kwargs[:axis_lengths],
         axis_pstarts = kwargs[:axis_pstarts],
         axis_pincs = kwargs[:axis_pincs],
-        compress = (kwargs[:compress] == "none" || kwargs[:compress] == "") ? NotACompressor() : BloscCompressor("blosclz", 5, true)
+        compressor = (kwargs[:compressor] == "none" || kwargs[:compressor] == "") ? NotACompressor() : BloscCompressor("blosclz", 5, true)
     )
 end
 
@@ -448,7 +450,7 @@ function process_kwargs_similarto(;kwargs...)
         axis_lengths = isempty(kwargs[:axis_lengths]) ? [io.axis_lengths[i] for i=1:length(io.axis_lengths)] : kwargs[:axis_lengths],
         axis_pstarts = isempty(kwargs[:axis_pstarts]) ? [io.axis_pstarts[i] for i=1:length(io.axis_pstarts)] : kwargs[:axis_pstarts],
         axis_pincs = isempty(kwargs[:axis_pincs]) ? [io.axis_pincs[i] for i=1:length(io.axis_pincs)] : kwargs[:axis_pincs],
-        compress = isempty(kwargs[:compress]) ? similar(io.cache.compressor) : (kwargs[:compress] == "none" ? NotACompressor() : BloscCompressor("blosclz", 5, true))
+        compressor = isempty(kwargs[:compressor]) ? similar(io.cache.compressor) : (kwargs[:compressor] == "none" ? NotACompressor() : BloscCompressor("blosclz", 5, true))
     )
 end
 
