@@ -26,7 +26,7 @@ function csopen_robust(containers, mode; kwargs...)
            io = csopen(containers, mode; kwargs...)
            break
         catch e
-            @warn "caught excption in csopen, sleeping for 60 seconds"
+            @warn "caught exception in csopen, sleeping for 60 seconds"
             showerror(stdout, e)
             sleep(60)
             if time() - tic > timeout
