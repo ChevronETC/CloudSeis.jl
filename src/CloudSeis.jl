@@ -883,8 +883,7 @@ Read traces from `io` into `trcs::Matrix` for the frame `idx...`.
 """
 function TeaSeis.readframetrcs!(io::CSeis, trcs::AbstractArray, idx::CartesianIndex)
     _trcs = getframetrcs(io, idx)
-    fld = fold(io, idx)
-    copyto!(trcs, 1, _trcs, 1, size(io,1)*fld)
+    copyto!(trcs, 1, _trcs, 1, size(io,1)*size(io,2))
 end
 
 """
@@ -906,8 +905,7 @@ Read headers from `io` into `hdrs::Matrix` for the frame `idx...`.
 """
 function TeaSeis.readframehdrs!(io::CSeis, hdrs::AbstractArray{UInt8,2}, idx::CartesianIndex)
     _hdrs = getframehdrs(io, idx)
-    fld = fold(io, idx)
-    copyto!(hdrs, 1, _hdrs, 1, io.hdrlength*fld)
+    copyto!(hdrs, 1, _hdrs, 1, io.hdrlength*size(io,2))
 end
 
 """
@@ -952,8 +950,8 @@ function TeaSeis.writeframe(io::CSeis, trcs::AbstractArray, hdrs::AbstractArray{
     fold!(io, fld, idx)
     _trcs = getframetrcs(io, idx)
     _hdrs = getframehdrs(io,idx)
-    copyto!(_trcs, 1, trcs, 1, fld*size(io,1))
-    copyto!(_hdrs, 1, hdrs, 1, fld*io.hdrlength)
+    copyto!(_trcs, 1, trcs, 1, size(io,2)*size(io,1))
+    copyto!(_hdrs, 1, hdrs, 1, size(io,2)*io.hdrlength)
     fld
 end
 
