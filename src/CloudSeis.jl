@@ -410,7 +410,7 @@ function process_kwargs(;kwargs...)
     compressors = compressor_options()
     local compressor
     if kwargs[:compressor] == nothing
-        compressor = compressors["none"]
+        compressor = compressors["leftjustify"]
     else
         kwargs[:compressor] ∈ keys(compressors) || compressor_error()
         compressor = compressors[kwargs[:compressor]]

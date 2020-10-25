@@ -37,7 +37,8 @@ function csopen_robust(containers, mode; kwargs...)
     io
 end
 
-const clouds = (Azure, Azure2, POSIX)
+# const clouds = (Azure, Azure2, POSIX)
+const clouds = (POSIX,)
 const compressors = ("none","blosc","leftjustify")
 
 @testset "CloudSeis, cloud=$cloud, compresser=$compressor" for cloud in clouds, compressor in compressors
@@ -48,6 +49,12 @@ const compressors = ("none","blosc","leftjustify")
         if compressor == "none"
             @test isa(io.cache.compressor, CloudSeis.NotACompressor)
             @test Dict(io.cache.compressor)["method"] == "none"
+
+            # default compression is "leftjustify"
+            r = lowercase(randstring())
+            io_default = csopen_robust(mkcontainer(cloud, "test-$r-default-cs"), "w", axis_lengths=[10,11,12])
+            @test isa(io_default.cache.compressor, CloudSeis.LeftJustifyCompressor)
+            rm(io_default)
         end
         if compressor == "blosc"
             @test isa(io.cache.compressor, CloudSeis.BloscCompressor)
@@ -57,6 +64,7 @@ const compressors = ("none","blosc","leftjustify")
             @test isa(io.cache.compressor, CloudSeis.LeftJustifyCompressor)
             @test Dict(io.cache.compressor)["method"] == "leftjustify"
         end
+        rm(io)
     end
 
     @testset "allocframe" begin
