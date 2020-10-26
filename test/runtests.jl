@@ -37,8 +37,7 @@ function csopen_robust(containers, mode; kwargs...)
     io
 end
 
-# const clouds = (Azure, Azure2, POSIX)
-const clouds = (POSIX,)
+const clouds = (Azure, Azure2, POSIX)
 const compressors = ("none","blosc","leftjustify")
 
 @testset "CloudSeis, cloud=$cloud, compresser=$compressor" for cloud in clouds, compressor in compressors
