@@ -12,6 +12,7 @@ TeaSeis = "db5f7d96-a200-5343-9fc6-a259b42289b2"
 
 [compat]
 AbstractStorage = "1"
+Blosc = "0.7"
 JSON = "0.21"
 TeaSeis = "0.4"
 julia = "1"
