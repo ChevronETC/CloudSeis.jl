@@ -1015,11 +1015,12 @@ function TeaSeis.leftjustify!(io::CSeis, trcs::AbstractArray{Float32, 2}, hdrs::
     if fold(io, hdrs) == io.axis_lengths[2]
         return
     end
-    proptyp = prop(io, stockprop[:TRC_TYPE])
+    proptyp = prop(io, "TRC_TYPE", Int32)
     j,ntrcs,nsamp,nhead = 1,size(trcs, 2),size(trcs,1),size(hdrs,1)
     for i = 1:ntrcs
         if get(proptyp, hdrs, i) != tracetype[:live]
-            for j = i+1:ntrcs
+            j = i+1
+            while j <= ntrcs
                 if get(proptyp, hdrs, j) == tracetype[:live]
                     for k = 1:nsamp
                         tmp = trcs[k,i]
@@ -1034,7 +1035,9 @@ function TeaSeis.leftjustify!(io::CSeis, trcs::AbstractArray{Float32, 2}, hdrs::
                     end
                     break
                 end
+                j += 1
             end
+            j >= ntrcs && break
         end
     end
 end
