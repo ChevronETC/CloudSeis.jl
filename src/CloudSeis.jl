@@ -1284,9 +1284,13 @@ Write a frame to `io`.  The location of the frame is determined from
 set of headers are created from `idx...` and are also written to `io`.
 """ 
 function TeaSeis.writeframe(io::CSeis, trcs::AbstractArray, idx::CartesianIndex)
+    @info "line $(@__LINE__) in $(@__FILE__)"
     cache!(io, idx)
+    @info "line $(@__LINE__) in $(@__FILE__)"
     _trcs,hdrs = getframe(io, idx)
+    @info "line $(@__LINE__) in $(@__FILE__)"
     prop_trctype = prop(io, stockprop[:TRC_TYPE])
+    @info "line $(@__LINE__) in $(@__FILE__)"
     for i = 1:size(io,2)
         set!(prop_trctype, hdrs, i, tracetype[:live])
         set!(prop(io, io.axis_propdefs[2]), hdrs, i, i)
@@ -1294,8 +1298,11 @@ function TeaSeis.writeframe(io::CSeis, trcs::AbstractArray, idx::CartesianIndex)
             set!(prop(io, io.axis_propdefs[idim]), hdrs, i, idx[idim-2])
         end
     end
+    @info "line $(@__LINE__) in $(@__FILE__)"
     copyto!(_trcs, 1, trcs, 1, size(io,1)*size(io,2))
+    @info "line $(@__LINE__) in $(@__FILE__)"
     fold!(io, size(io,2), idx)
+    @info "line $(@__LINE__) in $(@__FILE__)"
     size(io,2)
 end
 TeaSeis.writeframe(io::CSeis, trcs::AbstractArray, idx...) = writeframe(io, trcs, CartesianIndex(idx))
