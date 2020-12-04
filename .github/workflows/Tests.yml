@@ -23,9 +23,9 @@ jobs:
         shell: bash
       - name: Run Az CLI script
         run: |
-          az group create -l southcentralus -n "cloudseis-${{ matrix.os }}-${{ matrix.julia-version }}-${{ github.run_id }}"
-          az storage account create -n "c${{ steps.uuid.outputs.uuid }}a" -g "cloudseis-${{ matrix.os }}-${{ matrix.julia-version }}-${{ github.run_id }}" -l southcentralus
-          az storage account create -n "c${{ steps.uuid.outputs.uuid }}b" -g "cloudseis-${{ matrix.os }}-${{ matrix.julia-version }}-${{ github.run_id }}" -l southcentralus
+          az group create -l southcentralus -n "AzureBackupRG-cloudseis-${{ matrix.os }}-${{ matrix.julia-version }}-${{ github.run_id }}"
+          az storage account create -n "c${{ steps.uuid.outputs.uuid }}a" -g "AzureBackupRG-cloudseis-${{ matrix.os }}-${{ matrix.julia-version }}-${{ github.run_id }}" -l southcentralus
+          az storage account create -n "c${{ steps.uuid.outputs.uuid }}b" -g "AzureBackupRG-cloudseis-${{ matrix.os }}-${{ matrix.julia-version }}-${{ github.run_id }}" -l southcentralus
       - uses: julia-actions/julia-buildpkg@master
       - uses: julia-actions/julia-runtest@master
         env:
@@ -38,6 +38,6 @@ jobs:
           file: lcov.info
       - name: Run Az CLI script
         run: |
-          az group delete -n "cloudseis-${{ matrix.os }}-${{ matrix.julia-version }}-${{ github.run_id }}" --yes
+          az group delete -n "AzureBackupRG-cloudseis-${{ matrix.os }}-${{ matrix.julia-version }}-${{ github.run_id }}" --yes
         if: ${{ always() }}
 
