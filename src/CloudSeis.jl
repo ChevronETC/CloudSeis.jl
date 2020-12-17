@@ -441,8 +441,16 @@ end
 function process_kwargs_similarto(;kwargs...)
     io = csopen(kwargs[:similarto])
 
+    local mbytes_per_extent
+    if !(isempty(kwargs[:axis_lengths]))
+        @warn "If axis_lengths is set, then the extents will be re-computed.  Use `mbytes_per_extent`, `frames_per_extent`, or `extents` keyword arguments to control the behavior."
+        mbytes_per_extent = kwargs[:mbytes_per_extent] < 0 ? 1024 : kwargs[:mbytes_per_extent]
+    else
+        mbytes_per_extent = kwargs[:mbytes_per_extent]
+    end
+
     local extents
-    if kwargs[:frames_per_extent] == 0 && kwargs[:mbytes_per_extent] < 0 && length(kwargs[:extents]) == 0
+    if kwargs[:frames_per_extent] == 0 && mbytes_per_extent < 0 && length(kwargs[:extents]) == 0
         extents = [io.extents[i].frameindices for i=1:length(io.extents)]
     else
         extents = kwargs[:extents]
@@ -468,7 +476,7 @@ function process_kwargs_similarto(;kwargs...)
         byteorder = kwargs[:byteorder] == "" ? io.byteorder : kwargs[:byteorder],
         extents = extents,
         frames_per_extent = kwargs[:frames_per_extent],
-        mbytes_per_extent = kwargs[:mbytes_per_extent] < 0 ? 1024 : kwargs[:mbytes_per_extent],
+        mbytes_per_extent = mbytes_per_extent,
         geometry = kwargs[:geometry] == nothing ? io.geometry : kwargs[:geometry],
         tracepropertydefs = isempty(kwargs[:tracepropertydefs]) ? [io.traceproperties[i].def for i=1:length(io.traceproperties)] : kwargs[:tracepropertydefs],
         dataproperties = isempty(kwargs[:dataproperties]) ? dataproperties : kwargs[:dataproperties],

@@ -609,4 +609,31 @@ const compressors = ("none","blosc","leftjustify")
         io = csopen(mkcontainer(cloud, "test-$r-cs"), axis_lengths=[10,11,12], force=true, compressor="none")
         @test isa(io.cache, CloudSeis.Cache{CloudSeis.NotACompressor})
     end
+
+    @testset "similar with new axis lengths" begin
+        sleep(1)
+        r = lowercase(randstring(MersenneTwister(millisecond(now())+29),4))
+        container = mkcontainer(cloud, "test-$r-cs")
+        io = csopen_robust(container, "w", axis_lengths=[10,11,2])
+
+        trcs1 = rand(Float32,10,11)
+        trcs2 = rand(Float32,10,11)
+
+        writeframe(io, trcs1, 1)
+        writeframe(io, trcs2, 2)
+        close(io)
+
+        container_similar = mkcontainer(cloud, "test-$r-similar-cs")
+        io_similar = csopen_robust(container_similar, "w"; similarto=container, axis_lengths=[10,11,1])
+        writeframe(io_similar, trcs1, 1)
+        close(io_similar)
+
+        io = csopen_robust(container, "r")
+        io_similar = csopen_robust(container_similar, "r")
+        _trcs1 = readframetrcs(io_similar, 1)
+        @test _trcs1 ≈ trcs1
+
+        rm(io)
+        rm(io_similar)
+    end
 end
