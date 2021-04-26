@@ -390,10 +390,10 @@ function csopen_write(containers::Vector{<:Container}, mode; kwargs...)
         "compressor"=>Dict(kwargs[:compressor]))
 
     if kwargs[:geometry] != nothing
-        merge(description, Dict("geometry"=>Dict(kwargs[:geometry])))
+        merge!(description, Dict("geometry"=>Dict(kwargs[:geometry])))
     end
     if length(kwargs[:dataproperties]) > 0
-        merge(description, Dict("dataproperties"=>[Dict(dataproperty) for dataproperty in kwargs[:dataproperties]]))
+        merge!(description, Dict("dataproperties"=>[Dict(dataproperty) for dataproperty in kwargs[:dataproperties]]))
     end
 
     mkpath.(containers)
