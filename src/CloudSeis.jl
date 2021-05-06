@@ -334,7 +334,7 @@ function csopen_write(containers::Vector{<:Container}, mode; kwargs...)
     ndim == 0 && error("must specify axis_lengths")
     axis_propdefs = kwargs[:axis_propdefs]
     if length(axis_propdefs) == 0
-        axis_propdefs = [stockprop[:SAMPLE], stockprop[:TRACE], stockprop[:FRAME], stockprop[:VOLUME], stockprop[:HYPRCUBE]][1:ndim]
+        axis_propdefs = [stockprop[:SAMPLE], stockprop[:TRACE], stockprop[:FRAME], stockprop[:VOLUME], stockprop[:HYPRCUBE]][1:min(ndim,5)]
         for i = 6:ndim
             push!(axis_propdefs, TracePropertyDef("DIM$i", "DIM$i", Int32, 1))
         end

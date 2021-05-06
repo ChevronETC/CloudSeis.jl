@@ -636,4 +636,16 @@ const compressors = ("none","blosc","leftjustify")
         rm(io)
         rm(io_similar)
     end
+
+    @testset "csopen for 6 dimensional data-set" begin
+        sleep(1)
+        r = lowercase(randstring(MersenneTwister(millisecond(now())+29),4))
+        container = mkcontainer(cloud, "test-$r-cs")
+        io = csopen_robust(container, "w", axis_lengths=[10,11,2,2,3,1])
+        close(io)
+        io = csopen_robust(container, "r")
+        @test size(io) == (10,11,2,2,3,1)
+        labels = [propdefs(io)[i].label for i=1:6]
+        @test labels == ["SAMPLE", "TRACE", "FRAME", "VOLUME", "HYPRCUBE", "DIM6"]
+    end
 end
