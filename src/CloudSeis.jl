@@ -1257,7 +1257,7 @@ Read traces and headers from `io` into `trcs::Matrix`, and `hdrs::Matrix` for th
 TeaSeis.readframe!(io::CSeis, trcs::AbstractArray, hdrs::AbstractArray{UInt8,2}, idx::CartesianIndex) = readframetrcs!(io, trcs, idx), readframehdrs!(io, hdrs, idx)
 
 """
-    trcs,hdrs = readframe(io::CSeis, trcs, hdrs, idx...)
+    trcs,hdrs = readframe(io::CSeis, idx...)
 
 Read traces and headers from `io` for the frame `idx...`.  `idx...` can
 either be integer(s) or a `CartesianIndex`.
