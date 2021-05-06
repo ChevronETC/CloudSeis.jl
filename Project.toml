@@ -11,7 +11,7 @@ Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 TeaSeis = "db5f7d96-a200-5343-9fc6-a259b42289b2"
 
 [compat]
-AbstractStorage = "1"
+AbstractStorage = "^1.1"
 Blosc = "0.7"
 JSON = "0.21"
 TeaSeis = "0.4"

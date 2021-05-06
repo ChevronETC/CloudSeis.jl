@@ -82,7 +82,7 @@ struct Extent{C<:Container}
 end
 
 function Dict(extent::Extent)
-    Dict("name"=>extent.name, "container"=>JSON.parse(json(scrubsession(extent.container))), "firstframe"=>extent.frameindices[1], "lastframe"=>extent.frameindices[end])
+    Dict("name"=>extent.name, "container"=>minimaldict(extent.container), "firstframe"=>extent.frameindices[1], "lastframe"=>extent.frameindices[end])
 end
 
 function Extent(extent::Dict, containers::Vector{C}) where {C<:Container}
