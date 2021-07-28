@@ -23,8 +23,12 @@ function csopen_robust(containers, mode; kwargs...)
     tic = time()
     while true
         try
-           io = csopen(containers, mode; kwargs...)
-           break
+            if (mode == "r" || mode == "r+") && isa(containers, AbstractArray)
+                io = csopen(containers[1], mode; kwargs...)
+            else
+                io = csopen(containers, mode; kwargs...)
+            end
+            break
         catch e
             @warn "caught exception in csopen, sleeping for 60 seconds"
             showerror(stdout, e)
