@@ -493,11 +493,33 @@ const compressors = ("none","blosc","leftjustify")
         rm(io)
     end
 
+    @testset "backward compatibility, dataproperty (1.2->1.1)" begin
+        sleep(1)
+        r = lowercase(randstring(MersenneTwister(millisecond(now())+23)))
+        c = mkcontainer(cloud, "test-$r-cs")
+        _c = isa(c, Array) ? c[1] : c
+
+        io = csopen_robust(c, "w", axis_lengths=[10,11,12], dataproperties=[DataProperty("X",1)], compressor=compressor)
+        d = JSON.parse(read(_c, "description.json", String))
+        @test isa(d["dataproperties"], Dict)
+        d["dataproperties"] = [Dict("label"=>"X", "value"=>1)]
+        write(_c, "description.json", json(d, 1))
+        close(io)
+
+        io = csopen_robust(c, "r")
+        d = JSON.parse(read(_c, "description.json", String))
+        @test isa(d["dataproperties"], Vector)
+        @test dataproperty(io, "X") == 1
+
+        close(io)
+        rm(io)
+    end
+
     @testset "copy!" begin
         sleep(1)
-        r1 = lowercase(randstring(MersenneTwister(millisecond(now())+23),4))
+        r1 = lowercase(randstring(MersenneTwister(millisecond(now())+24),4))
         io1 = csopen_robust(mkcontainer(cloud, "test-$r1-cs"), "w", axis_lengths=[10,11,12], compressor=compressor)
-        r2 = lowercase(randstring(MersenneTwister(millisecond(now())+24),4))
+        r2 = lowercase(randstring(MersenneTwister(millisecond(now())+25),4))
         io2 = csopen_robust(mkcontainer(cloud, "test-$r2-cs"), "w", axis_lengths=[10,11,12], compressor=compressor)
 
         h1 = allocframehdrs(io1)
@@ -525,7 +547,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "reduce" begin
         sleep(1)
-        r = lowercase(randstring(MersenneTwister(millisecond(now())+25),4))
+        r = lowercase(randstring(MersenneTwister(millisecond(now())+26),4))
         io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,50], frames_per_extent=2, compressor=compressor)
 
         @test length(io.extents) == 25
@@ -556,7 +578,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "reduce, parallel" begin
         sleep(1)
-        r = lowercase(randstring(MersenneTwister(millisecond(now())+26),4))
+        r = lowercase(randstring(MersenneTwister(millisecond(now())+27),4))
         io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,50], frames_per_extent=2, compressor=compressor)
 
         @test length(io.extents) == 25
@@ -590,7 +612,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "robust cscreate" begin
         sleep(1)
-        r = lowercase(randstring(MersenneTwister(millisecond(now())+27),4))
+        r = lowercase(randstring(MersenneTwister(millisecond(now())+28),4))
         io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], force=true, compressor=compressor)
         writeframe(io, rand(Float32,10,11), 1)
         close(io)
@@ -601,7 +623,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "backward compatibility (1.1->1.0)" begin
         sleep(1)
-        r = lowercase(randstring(MersenneTwister(millisecond(now())+28),4))
+        r = lowercase(randstring(MersenneTwister(millisecond(now())+29),4))
         io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], force=true, compressor="none")
         description = JSON.parse(read(io.containers[1], "description.json", String))
         delete!(description, "compressor")
@@ -612,7 +634,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "similar with new axis lengths" begin
         sleep(1)
-        r = lowercase(randstring(MersenneTwister(millisecond(now())+29),4))
+        r = lowercase(randstring(MersenneTwister(millisecond(now())+30),4))
         container = mkcontainer(cloud, "test-$r-cs")
         io = csopen_robust(container, "w", axis_lengths=[10,11,2])
 
@@ -639,7 +661,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "csopen for 6 dimensional data-set" begin
         sleep(1)
-        r = lowercase(randstring(MersenneTwister(millisecond(now())+29),4))
+        r = lowercase(randstring(MersenneTwister(millisecond(now())+31),4))
         container = mkcontainer(cloud, "test-$r-cs")
         io = csopen_robust(container, "w", axis_lengths=[10,11,2,2,3,1])
         close(io)
