@@ -29,8 +29,8 @@ struct DataProperty{T}
     value::T
 end
 
-Base.Dict(dataproperty::DataProperty) = Dict("label"=>dataproperty.label,"value"=>dataproperty.value)
-DataProperty(dataproperty::Dict) = DataProperty(dataproperty["label"], dataproperty["value"])
+Base.Dict(dataproperty::DataProperty) = Dict(dataproperty.label=>dataproperty.value)
+DataProperty(dataproperty::Dict) = DataProperty(first(keys(dataproperty)), first(values(dataproperty)))
 
 include("stockprops.jl")
 
@@ -385,7 +385,7 @@ function csopen_write(containers::Vector{<:Container}, mode; kwargs...)
             "axis_pstarts" => axis_pstarts,
             "axis_pincs" => axis_pincs),
         "traceproperties"=>[Dict(traceproperty) for traceproperty in traceproperties],
-        "dataproperties"=>[Dict(dataproperty) for dataproperty in kwargs[:dataproperties]],
+        "dataproperties"=>isempty(kwargs[:dataproperties]) ? Dict() : mapreduce(Dict, merge, kwargs[:dataproperties]),
         "extents"=>Dict.(extents),
         "compressor"=>Dict(kwargs[:compressor]))
 
@@ -620,9 +620,17 @@ function get_data_properties(description::Dict)
         return NamedTuple{}()
     end
     c = description["dataproperties"]
-    names = ntuple(i->Symbol(c[i]["label"]), length(c))
-    values = [c[i]["value"] for i=1:length(c)]
-    NamedTuple{names}(values)
+
+    local names, _values
+    if isa(c, AbstractArray) # for backwards compatability (datasets generated with version <=1.1.3)
+        names = ntuple(i->Symbol(c[i]["label"]), length(c))
+        _values = [c[i]["value"] for i=1:length(c)]
+    else
+        labels = collect(keys(c))
+        names = ntuple(i->Symbol(labels[i]), length(labels))
+        _values = collect(values(c))
+    end
+    NamedTuple{names}(_values)
 end
 
 function get_geometry(description::Dict)
