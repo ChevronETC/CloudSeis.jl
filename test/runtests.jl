@@ -159,10 +159,10 @@ const compressors = ("none","blosc","leftjustify")
         rm(io)
     end
 
-    @testset "write" begin
+    @testset "write, lstarts=$lstarts, lincs=$lincs" for (lstarts,lincs) = (((1,1,1),(1,1,1)), ((2,3,4),(5,6,7)))
         sleep(1)
         r = lowercase(randstring(MersenneTwister(millisecond(now())+4)))
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], compressor=compressor)
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_lstarts=lstarts, axis_lincs=lincs, compressor=compressor)
 
         x = rand(Float32,10,11,12)
         for ifrm = 1:12
@@ -173,7 +173,7 @@ const compressors = ("none","blosc","leftjustify")
 
         io = csopen(mkcontainer(cloud, "test-$r-cs"))
         for ifrm = 1:12
-            _x = readframetrcs(io, ifrm)
+            _x = readframetrcs(io, lstarts[3] + lincs[3]*(ifrm - 1))
             @test _x ≈ x[:,:,ifrm]
         end
         close(io)
@@ -198,10 +198,10 @@ const compressors = ("none","blosc","leftjustify")
         rm(io)
     end
 
-    @testset "readtrcs" begin
+    @testset "readtrcs, lstarts=$lstarts, lincs=$lincs" for (lstarts,lincs) = (((1,1,1),(1,1,1)), ((2,3,4),(5,6,7)))
         sleep(1)
         r = lowercase(randstring(MersenneTwister(millisecond(now())+6)))
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], compressor=compressor)
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_lstarts=lstarts, axis_lincs=lincs, compressor=compressor)
 
         x = rand(Float32,10,11,12)
         write(io, x, :, :, :)
@@ -215,10 +215,10 @@ const compressors = ("none","blosc","leftjustify")
         @test x ≈ _x
     end
 
-    @testset "readhdrs" begin
+    @testset "readhdrs, lstarts=$lstarts, lincs=$lincs" for (lstarts,lincs) = (((1,1,1),(1,1,1)), ((2,3,4),(5,6,7)))
         sleep(1)
         r = lowercase(randstring(MersenneTwister(millisecond(now())+7)))
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], compressor=compressor)
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_lincs=lincs, axis_lstarts=lstarts, compressor=compressor)
 
         x = rand(Float32,10,11,12)
         write(io, x, :, :, :)
@@ -230,15 +230,15 @@ const compressors = ("none","blosc","leftjustify")
         rm(io)
 
         for ifrm = 1:12, itrc = 1:11
-            @test get(prop(io, "TRACE"), view(h, :, :, ifrm), itrc) ≈ itrc
-            @test get(prop(io, "FRAME"), view(h, :, :, ifrm), itrc) ≈ ifrm
+            @test get(prop(io, "TRACE"), view(h, :, :, ifrm), itrc) ≈ lstarts[2] + lincs[2]*(itrc - 1)
+            @test get(prop(io, "FRAME"), view(h, :, :, ifrm), itrc) ≈ lstarts[3] + lincs[3]*(ifrm - 1)
         end
     end
 
-    @testset "readhdrs!" begin
+    @testset "readhdrs!, lstarts=$lstarts, lincs=$lincs" for (lstarts,lincs) = (((1,1,1),(1,1,1)), ((2,3,4),(5,6,7)))
         sleep(1)
         r = lowercase(randstring(MersenneTwister(millisecond(now())+8)))
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], compressor=compressor)
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_lincs=lincs, axis_lstarts=lstarts, compressor=compressor)
 
         x = rand(Float32,10,11,12)
         write(io, x, :, :, :)
@@ -250,22 +250,22 @@ const compressors = ("none","blosc","leftjustify")
         rm(io)
 
         for ifrm = 1:12, itrc = 1:11
-            @test get(prop(io, "TRACE"), view(h, :, :, ifrm), itrc) ≈ itrc
-            @test get(prop(io, "FRAME"), view(h, :, :, ifrm), itrc) ≈ ifrm
+            @test get(prop(io, "TRACE"), view(h, :, :, ifrm), itrc) ≈ lstarts[2] + lincs[2]*(itrc - 1)
+            @test get(prop(io, "FRAME"), view(h, :, :, ifrm), itrc) ≈ lstarts[3] + lincs[3]*(ifrm - 1)
         end
     end
 
-    @testset "partial read for foldmap" begin
+    @testset "partial read for foldmap, lstarts=$lstarts, lincs=$lincs" for (lstrts,lncs) = (((1,1,1),(1,1,1)), ((2,3,4),(5,6,7)))
         sleep(1)
         r = lowercase(randstring(MersenneTwister(millisecond(now())+9)))
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], compressor=compressor)
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_lstarts=lstrts, axis_lincs=lncs, compressor=compressor)
 
         x = rand(Float32,10,11,12)
         write(io, x, :, :, :)
         close(io)
 
         io = csopen(mkcontainer(cloud, "test-$r-cs"))
-        f = [fold(io,i) for i=1:12]
+        f = [fold(io,i) for i in lstarts(io,3) .+ lincs(io,3)*(0:size(io,3)-1)]
         close(io)
         rm(io)
 
@@ -393,9 +393,37 @@ const compressors = ("none","blosc","leftjustify")
         rm(io)
     end
 
-    @testset "units" begin
+    @testset "lincs" begin
+        sleep(1)
+        r = lowercase(randstring(MersenneTwister(millisecond(now())+18)))
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_lincs=[1,2,3], compressor=compressor)
+        @test lincs(io,1) == 1
+        @test lincs(io,2) == 2
+        @test lincs(io,3) == 3
+        @test lincs(io)[1] == 1
+        @test lincs(io)[2] == 2
+        @test lincs(io)[3] == 3
+        close(io)
+        rm(io)
+    end
+
+    @testset "lstarts" begin
         sleep(1)
         r = lowercase(randstring(MersenneTwister(millisecond(now())+17)))
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_lstarts=[1,2,3], compressor=compressor)
+        @test lstarts(io,1) == 1
+        @test lstarts(io,2) == 2
+        @test lstarts(io,3) == 3
+        @test lstarts(io)[1] == 1
+        @test lstarts(io)[2] == 2
+        @test lstarts(io)[3] == 3
+        close(io)
+        rm(io)
+    end
+
+    @testset "units" begin
+        sleep(1)
+        r = lowercase(randstring(MersenneTwister(millisecond(now())+19)))
         io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_units=["X","Y","Z"], compressor=compressor)
         @test units(io,1) == "X"
         @test units(io,2) == "Y"
@@ -409,7 +437,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "domains" begin
         sleep(1)
-        r = lowercase(randstring(MersenneTwister(millisecond(now())+18)))
+        r = lowercase(randstring(MersenneTwister(millisecond(now())+20)))
         io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_domains=["X","Y","Z"], compressor=compressor)
         @test domains(io,1) == "X"
         @test domains(io,2) == "Y"
@@ -431,7 +459,7 @@ const compressors = ("none","blosc","leftjustify")
             u1=1,un=2,
             v1=3,vn=4,
             w1=5,wn=6)
-        r = lowercase(randstring(MersenneTwister(millisecond(now())+19)))
+        r = lowercase(randstring(MersenneTwister(millisecond(now())+21)))
         io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], geometry=g, compressor=compressor)
 
         _g = geometry(io)
@@ -460,7 +488,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "in" begin
         sleep(1)
-        r = lowercase(randstring(MersenneTwister(millisecond(now())+20)))
+        r = lowercase(randstring(MersenneTwister(millisecond(now())+22)))
         io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], compressor=compressor)
 
         @test in(stockprop[:TRACE], io) == true
@@ -472,7 +500,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "dataproperty" begin
         sleep(1)
-        r = lowercase(randstring(MersenneTwister(millisecond(now())+21)))
+        r = lowercase(randstring(MersenneTwister(millisecond(now())+23)))
         io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], dataproperties=[DataProperty("X",1)], compressor=compressor)
 
         @test dataproperty(io, "X") == 1
@@ -483,7 +511,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "hasdataproperty" begin
         sleep(1)
-        r = lowercase(randstring(MersenneTwister(millisecond(now())+22)))
+        r = lowercase(randstring(MersenneTwister(millisecond(now())+24)))
         io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], dataproperties=[DataProperty("X",1)], compressor=compressor)
 
         @test hasdataproperty(io, "X") == true
@@ -495,7 +523,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "backward compatibility, dataproperty (1.2->1.1)" begin
         sleep(1)
-        r = lowercase(randstring(MersenneTwister(millisecond(now())+23)))
+        r = lowercase(randstring(MersenneTwister(millisecond(now())+25)))
         c = mkcontainer(cloud, "test-$r-cs")
         _c = isa(c, Array) ? c[1] : c
 
@@ -517,9 +545,9 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "copy!" begin
         sleep(1)
-        r1 = lowercase(randstring(MersenneTwister(millisecond(now())+24),4))
+        r1 = lowercase(randstring(MersenneTwister(millisecond(now())+26),4))
         io1 = csopen_robust(mkcontainer(cloud, "test-$r1-cs"), "w", axis_lengths=[10,11,12], compressor=compressor)
-        r2 = lowercase(randstring(MersenneTwister(millisecond(now())+25),4))
+        r2 = lowercase(randstring(MersenneTwister(millisecond(now())+27),4))
         io2 = csopen_robust(mkcontainer(cloud, "test-$r2-cs"), "w", axis_lengths=[10,11,12], compressor=compressor)
 
         h1 = allocframehdrs(io1)
@@ -547,7 +575,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "reduce" begin
         sleep(1)
-        r = lowercase(randstring(MersenneTwister(millisecond(now())+26),4))
+        r = lowercase(randstring(MersenneTwister(millisecond(now())+28),4))
         io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,50], frames_per_extent=2, compressor=compressor)
 
         @test length(io.extents) == 25
@@ -578,7 +606,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "reduce, parallel" begin
         sleep(1)
-        r = lowercase(randstring(MersenneTwister(millisecond(now())+27),4))
+        r = lowercase(randstring(MersenneTwister(millisecond(now())+29),4))
         io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,50], frames_per_extent=2, compressor=compressor)
 
         @test length(io.extents) == 25
@@ -612,7 +640,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "robust cscreate" begin
         sleep(1)
-        r = lowercase(randstring(MersenneTwister(millisecond(now())+28),4))
+        r = lowercase(randstring(MersenneTwister(millisecond(now())+30),4))
         io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], force=true, compressor=compressor)
         writeframe(io, rand(Float32,10,11), 1)
         close(io)
@@ -623,7 +651,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "backward compatibility (1.1->1.0)" begin
         sleep(1)
-        r = lowercase(randstring(MersenneTwister(millisecond(now())+29),4))
+        r = lowercase(randstring(MersenneTwister(millisecond(now())+31),4))
         io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], force=true, compressor="none")
         description = JSON.parse(read(io.containers[1], "description.json", String))
         delete!(description, "compressor")
@@ -634,7 +662,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "similar with new axis lengths" begin
         sleep(1)
-        r = lowercase(randstring(MersenneTwister(millisecond(now())+30),4))
+        r = lowercase(randstring(MersenneTwister(millisecond(now())+32),4))
         container = mkcontainer(cloud, "test-$r-cs")
         io = csopen_robust(container, "w", axis_lengths=[10,11,2])
 
@@ -661,7 +689,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "csopen for 6 dimensional data-set" begin
         sleep(1)
-        r = lowercase(randstring(MersenneTwister(millisecond(now())+31),4))
+        r = lowercase(randstring(MersenneTwister(millisecond(now())+33),4))
         container = mkcontainer(cloud, "test-$r-cs")
         io = csopen_robust(container, "w", axis_lengths=[10,11,2,2,3,1])
         close(io)
@@ -669,5 +697,132 @@ const compressors = ("none","blosc","leftjustify")
         @test size(io) == (10,11,2,2,3,1)
         labels = [propdefs(io)[i].label for i=1:6]
         @test labels == ["SAMPLE", "TRACE", "FRAME", "VOLUME", "HYPRCUBE", "DIM6"]
+    end
+
+    @testset "non unitary logical start and increments" begin
+        sleep(1)
+        r = lowercase(randstring(MersenneTwister(millisecond(now())+34),4))
+        container = mkcontainer(cloud, "test-$r-cs")
+
+        io = csopen_robust(container, "w", axis_lengths=[12,11,4], axis_lstarts=[1,2,5], axis_lincs=[1,1,3])
+
+        # test map from cartesian to linear index
+        @test CloudSeis.linearframeidx(io, 5) == 1
+        @test CloudSeis.linearframeidx(io, 8) == 2
+        @test CloudSeis.linearframeidx(io, 11) == 3
+        @test CloudSeis.linearframeidx(io, 14) == 4
+
+        # test map from unitary to non-unitary cartesian index
+        @test CloudSeis.cartesianframeidx(io, 1) == CartesianIndex((5,))
+        @test CloudSeis.cartesianframeidx(io, 2) == CartesianIndex((8,))
+        @test CloudSeis.cartesianframeidx(io, 3) == CartesianIndex((11,))
+        @test CloudSeis.cartesianframeidx(io, 4) == CartesianIndex((14,))
+
+        @test CloudSeis.lineartraceidx(io, 2) == 1
+        @test CloudSeis.cartesiantraceidx(io, 1) == 2
+
+        rm(io)
+    end
+
+    @testset "non unitary logical start and increments, read/write frame" begin
+        sleep(1)
+        r = lowercase(randstring(MersenneTwister(millisecond(now())+35)))
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_lstarts=[0,2,6], axis_lincs=[1,2,3], compressor=compressor)
+
+        x = rand(Float32,10,11,12)
+        t,h = allocframe(io)
+
+        n = size(h,2)
+        J = Vector{Vector{Int}}(undef, size(io,3))
+        for iframe = 1:size(io,3)
+            t .= x[:,:,iframe]
+            if iframe == 2
+                J[iframe] = [1:11;]
+            elseif iframe == 5
+                J[iframe] = Int[]
+            elseif iframe == 9
+                J[iframe] = [6]
+            else
+                J[iframe] = randperm(n)[1:div(n,2)]
+            end
+            for itrace = 1:size(io,2)
+                set!(prop(io,io.axis_propdefs[2]), h, itrace, 2 + 2*(itrace - 1))
+                set!(prop(io,io.axis_propdefs[3]), h, itrace, 6 + 3*(iframe - 1))
+                set!(prop(io,stockprop[:TRC_TYPE]), h, itrace, itrace ∈ J[iframe] ? tracetype[:live] : tracetype[:dead])
+                if itrace ∉ J[iframe]
+                    t[:,itrace] .= 0
+                end
+            end
+            writeframe(io,t,h)
+        end
+        close(io)
+
+        nbytes = filesize(io.extents[1].container, io.extents[1].name)
+        if compressor == "leftjustify"
+            @test nbytes == size(io,3)*8 + mapreduce(iframe->length(J[iframe])*(size(io,1)*sizeof(io.traceformat) + headerlength(io)), +, 1:size(io,3))
+        elseif compressor == "none"
+            @test nbytes == size(io,3)*8 + size(io,3)*size(io,2)*(4*size(io,1) + headerlength(io))
+        elseif compressor == "blosc"
+            @test nbytes < size(io,3)*8 + size(io,3)*size(io,2)*(4*size(io,1) + headerlength(io))
+        end
+
+        io = csopen(mkcontainer(cloud, "test-$r-cs"))
+        for iframe = 1:size(io,3)
+            t,h = readframe(io, 6 + 3*(iframe-1))
+            for i = 1:size(h,2)
+                if i ∈ J[iframe]
+                    @test t[:,i] ≈ x[:,i,iframe]
+                    @test get(prop(io,io.axis_propdefs[3]), h, i) == 6 + 3*(iframe-1)
+                end
+                @test get(prop(io,io.axis_propdefs[2]), h, i) == 2 + 2*(i - 1)
+                @test get(prop(io,stockprop[:TRC_TYPE]), h, i) == (i ∈ J[iframe] ? tracetype[:live] : tracetype[:dead])
+            end
+        end
+        rm(io)
+    end
+
+    @testset "non unitary logical start and increments, writeframe/readframe with index" begin
+        sleep(1)
+        r = lowercase(randstring(MersenneTwister(millisecond(now())+36)))
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_lstarts=[0,2,6], axis_lincs=[1,2,3], dataproperties=[DataProperty("P",1)], compressor=compressor)
+
+        x = rand(Float32,10,11)
+
+        t,h = allocframe(io)
+        t .= x
+
+        writeframe(io, t, 9)
+        close(io)
+
+        io = csopen(mkcontainer(cloud, "test-$r-cs"))
+        t,h = readframe(io, 9)
+        close(io)
+        @test t ≈ x
+        rm(io)
+    end
+
+    @testset "non unitary logical start and increments, exception for in-between out-of-bounds index" begin
+        sleep(1)
+        r = lowercase(randstring(MersenneTwister(millisecond(now())+37)))
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_lstarts=[1,2,3], axis_lincs=[4,5,6], dataproperties=[DataProperty("P",1)], compressor=compressor)
+
+        @test_throws ErrorException CloudSeis.linearframeidx(io, 4)
+        @test @inbounds CloudSeis.linearframeidx(io, 2) == 1
+
+        @test_throws ErrorException CloudSeis.lineartraceidx(io, 3)
+        @test @inbounds CloudSeis.linearframeidx(io, 3) == 1
+    end
+
+    @testset "backwards compatability, logical increments and starts" begin
+        sleep(1)
+        r = lowercase(randstring(MersenneTwister(millisecond(now())+38),4))
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], force=true)
+        description = JSON.parse(read(io.containers[1], "description.json", String))
+        delete!(description, "axis_lincs")
+        delete!(description, "axis_lstarts")
+        write(io.containers[1], "description.json", json(description))
+        io = csopen(mkcontainer(cloud, "test-$r-cs"), axis_lengths=[10,11,12], force=true)
+        @test lstarts(io) == (1,1,1)
+        @test lincs(io) == (1,1,1)
     end
 end

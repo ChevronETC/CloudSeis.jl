@@ -165,6 +165,8 @@ struct CSeis{T,N,Z<:AbstractCompressor,C<:Container,U<:NamedTuple,V<:NamedTuple,
     axis_lengths::NTuple{N,Int}
     axis_pstarts::NTuple{N,Float64}
     axis_pincs::NTuple{N,Float64}
+    axis_lstarts::NTuple{N,Int}
+    axis_lincs::NTuple{N,Int}
     axis_propdefs::U
     traceproperties::V
     dataproperties::W
@@ -186,6 +188,8 @@ function Base.copy(io::CSeis, mode, extents)
         io.axis_lengths,
         io.axis_pstarts,
         io.axis_pincs,
+        io.axis_lstarts,
+        io.axis_lincs,
         io.axis_propdefs,
         io.traceproperties,
         io.dataproperties,
@@ -225,6 +229,8 @@ container.  The `axis_lengths` vector is of at-least length 3.
 * `axis_domains::Vector{String}` Domains corresponding to the CloudSeis axes. e.g. `SPACE`, `TIME`, etc.  If not set, then `UNKNOWN` is used.
 * `axis_pstarts::Vector{Float64}` Physical origins for each axis.  If not set, then `0.0` is used for the physical origin of each axis.
 * `axis_pincs::Vector{Float64}` Physical deltas for each axis.  If not set, then `1.0` is used for the physical delta for each axis.
+* `axis_lstarts::Vector{Int}` Logical starts for each axis.  If not set, then `1` is used for the logical start for each axis.
+* `axis_lincs::Vector{Int}` Logical increments for each axis.  If not set, then `1` is used for the logical increment for each axis.
 * `compressor="none"` Compress the cache before writing to disk.  This is particularly useful for data with variable fold.  chooose from: ("none", "blosc", "leftjustify")
 
 # Example
@@ -260,6 +266,8 @@ function csopen(containers::Vector{<:Container}, mode;
         axis_lengths = [],
         axis_pstarts = [],
         axis_pincs = [],
+        axis_lstarts = [],
+        axis_lincs = [],
         compressor = nothing)
     kwargs = (
         similarto = similarto,
@@ -279,6 +287,8 @@ function csopen(containers::Vector{<:Container}, mode;
         axis_lengths = axis_lengths,
         axis_pstarts = axis_pstarts,
         axis_pincs = axis_pincs,
+        axis_lstarts = axis_lstarts,
+        axis_lincs = axis_lincs,
         compressor = compressor)
     if mode == "r" || mode == "r+"
         _kwargs = process_kwargs(;kwargs...)
@@ -343,6 +353,8 @@ function csopen_write(containers::Vector{<:Container}, mode; kwargs...)
     axis_domains = length(kwargs[:axis_domains]) == 0 ? ["unkown" for i=1:ndim] : kwargs[:axis_domains]
     axis_pstarts = length(kwargs[:axis_pstarts]) == 0 ? [0.0 for i=1:ndim] : kwargs[:axis_pstarts]
     axis_pincs = length(kwargs[:axis_pincs]) == 0 ? [1.0 for i=1:ndim] : kwargs[:axis_pincs]
+    axis_lstarts = length(kwargs[:axis_lstarts]) == 0 ? [1 for i=1:ndim] : kwargs[:axis_lstarts]
+    axis_lincs = length(kwargs[:axis_lincs]) == 0 ? [1 for i=1:ndim] : kwargs[:axis_lincs]
 
     traceproperties = get_trace_properties(kwargs[:tracepropertydefs], axis_propdefs)
 
@@ -383,7 +395,9 @@ function csopen_write(containers::Vector{<:Container}, mode; kwargs...)
             "axis_domains" => axis_domains,
             "axis_lengths" => axis_lengths,
             "axis_pstarts" => axis_pstarts,
-            "axis_pincs" => axis_pincs),
+            "axis_pincs" => axis_pincs,
+            "axis_lstarts" => axis_lstarts,
+            "axis_lincs" => axis_lincs),
         "traceproperties"=>[Dict(traceproperty) for traceproperty in traceproperties],
         "dataproperties"=>isempty(kwargs[:dataproperties]) ? Dict() : mapreduce(Dict, merge, kwargs[:dataproperties]),
         "extents"=>Dict.(extents),
@@ -431,6 +445,8 @@ function process_kwargs(;kwargs...)
         axis_lengths = kwargs[:axis_lengths],
         axis_pstarts = kwargs[:axis_pstarts],
         axis_pincs = kwargs[:axis_pincs],
+        axis_lstarts = kwargs[:axis_lstarts],
+        axis_lincs = kwargs[:axis_lincs],
         compressor = compressor
     )
 end
@@ -483,6 +499,8 @@ function process_kwargs_similarto(;kwargs...)
         axis_lengths = isempty(kwargs[:axis_lengths]) ? [io.axis_lengths[i] for i=1:length(io.axis_lengths)] : kwargs[:axis_lengths],
         axis_pstarts = isempty(kwargs[:axis_pstarts]) ? [io.axis_pstarts[i] for i=1:length(io.axis_pstarts)] : kwargs[:axis_pstarts],
         axis_pincs = isempty(kwargs[:axis_pincs]) ? [io.axis_pincs[i] for i=1:length(io.axis_pincs)] : kwargs[:axis_pincs],
+        axis_lstarts = isempty(kwargs[:axis_lstarts]) ? [io.axis_lstarts[i] for i=1:length(io.axis_lstarts)] : kwargs[:axis_lstarts],
+        axis_lincs = isempty(kwargs[:axis_lincs]) ? [io.axis_lincs[i] for i=1:length(io.axis_lincs)] : kwargs[:axis_lincs],
         compressor = compressor
     )
 end
@@ -500,6 +518,8 @@ function csopen_from_description(containers, mode, description, traceproperties)
         ntuple(i->description["fileproperties"]["axis_lengths"][i], ndim),
         ntuple(i->description["fileproperties"]["axis_pstarts"][i], ndim),
         ntuple(i->description["fileproperties"]["axis_pincs"][i], ndim),
+        haskey(description["fileproperties"], "axis_lstarts") ? ntuple(i->description["fileproperties"]["axis_lstarts"][i], ndim) : ntuple(_->1, ndim), # note backwards compat for data-sets without logical starts/increments
+        haskey(description["fileproperties"], "axis_lincs") ? ntuple(i->description["fileproperties"]["axis_lincs"][i], ndim) : ntuple(_->1, ndim), # note backwards compat for data-sets without logical starts/increments
         get_axis_propdefs(description, traceproperties),
         traceproperties,
         get_data_properties(description),
@@ -757,7 +777,7 @@ function cache_from_file!(io::CSeis{T,N,LeftJustifyCompressor}, extentindex) whe
 
         # regularize the indivdual frames
         for (jframe,iframe) = enumerate(io.extents[extentindex].frameindices)
-            regularize!(io, fmap[jframe], getframetrcs(io, extentindex, CartesianIndex(iframe,)), getframehdrs(io, extentindex, CartesianIndex(iframe,)))
+            regularize!(io, fmap[jframe], getframetrcs(io, extentindex, iframe), getframehdrs(io, extentindex, iframe))
         end
     end
     mb = length(io.cache.data) / 1_000_000
@@ -903,7 +923,7 @@ function Base.flush(io::CSeis{T,N,LeftJustifyCompressor}) where {T,N}
     @debug "compressing and writing extent $(io.cache.extentindex)..."
     t_compress = @elapsed begin
         for iframe in io.extents[io.cache.extentindex].frameindices
-            leftjustify!(io, getframe(io, iframe)...)
+            leftjustify!(io, getframetrcs(io, io.cache.extentindex, iframe), getframehdrs(io, io.cache.extentindex, iframe))
         end
 
         compressed_trc_offsets,compressed_hdr_offsets,fmap,nframes,_headerlength = compressed_offsets(io, io.cache.extentindex)
@@ -964,7 +984,7 @@ fold(io, 5, 6) # fold corresponding to 5th frame and 6th volume
 function TeaSeis.fold(io::CSeis, idx::CartesianIndex)
     extentindex = io.mode == "r" ? cache_foldmap!(io, idx) : cache!(io, idx)
     fmap = foldmap(io)
-    fmap[LinearIndices(io)[idx] - io.extents[extentindex].frameindices[1] + 1]
+    fmap[linearframeidx(io, idx) - io.extents[extentindex].frameindices[1] + 1]
 end
 TeaSeis.fold(io::CSeis, idx...) = fold(io, CartesianIndex(idx))
 
@@ -983,7 +1003,7 @@ function fold!(io::CSeis, fld, idx::CartesianIndex)
     io.mode == "r" && _foldmode_error()
     extentindex = cache!(io, idx)
     fmap = foldmap(io)
-    fmap[LinearIndices(io)[idx] - io.extents[extentindex].frameindices[1] + 1] = fld
+    fmap[linearframeidx(io, idx) - io.extents[extentindex].frameindices[1] + 1] = fld
     nothing
 end
 fold!(io::CSeis, fld, idx...) = fold!(io, fld, CartesianIndex(idx))
@@ -1003,14 +1023,14 @@ function TeaSeis.regularize!(io::CSeis, fld, trcs::AbstractArray{Float32, 2}, hd
     proptrc, proptyp = prop(io, io.axis_propdefs[2]), prop(io, stockprop[:TRC_TYPE])
     trace_mask = zeros(Int, ntrcs)
     for i = fld:-1:1
-        ii = get(proptrc, hdrs, i)
+        ii = lineartraceidx(io, get(proptrc, hdrs, i))
         trace_mask[ii] = 1
         trcs[:,ii] .= trcs[:,i]
         hdrs[:,ii] .= hdrs[:,i]
     end
     for i = 1:ntrcs
         if trace_mask[i] == 0
-            set!(proptrc, hdrs, i, i)
+            set!(proptrc, hdrs, i, cartesiantraceidx(io, i))
             set!(proptyp, hdrs, i, tracetype[:dead])
             trcs[:,i] .= 0
         end
@@ -1135,8 +1155,36 @@ TeaSeis.set!(prop::TraceProperty, hdrs::AbstractArray{UInt8,2}, i::Integer, valu
 
 Base.LinearIndices(io::CSeis) = LinearIndices(size(io)[3:end])
 
+function linearframeidx(io, idx, idim)
+    @boundscheck begin
+        if rem(idx[idim] - io.axis_lstarts[2+idim], io.axis_lincs[2+idim]) > 0
+            error("$idx is out-of-bounds.")
+        end
+    end
+    div(idx[idim] - io.axis_lstarts[2+idim], io.axis_lincs[2+idim]) + 1
+end
+
+linearframeidx(io, idx::NTuple{N,Int}) where {N} = LinearIndices(io)[CartesianIndex(ntuple(idim->linearframeidx(io, idx, idim), N))]
+linearframeidx(io, idx::CartesianIndex) = linearframeidx(io, idx.I)
+linearframeidx(io, idx::Int...) = linearframeidx(io, idx)
+
+cartesianframeidx(io, idx::NTuple{N,Int}) where {N} = CartesianIndex(ntuple(idim->io.axis_lstarts[2+idim] + io.axis_lincs[2+idim]*(idx[idim] - 1), N))
+cartesianframeidx(io, idx::CartesianIndex) = cartesianframeidx(io, idx.I)
+cartesianframeidx(io, idx::Int...) = cartesianframeidx(io, idx)
+
+function lineartraceidx(io, idx)
+    @boundscheck begin
+        if rem(idx - io.axis_lstarts[2], io.axis_lincs[2]) > 0
+            error("$idx is out-of-bounds.")
+        end
+    end
+    div(idx - io.axis_lstarts[2], io.axis_lincs[2]) + 1
+end
+
+cartesiantraceidx(io, idx) = io.axis_lstarts[2] + io.axis_lincs[2]*(idx-1)
+
 function extentindex_from_frameindex(io, idx::CartesianIndex)
-    frameidx = LinearIndices(io)[idx]
+    frameidx = linearframeidx(io, idx)
 
     # TODO - optimize me
     for (i,extent) in enumerate(io.extents)
@@ -1147,43 +1195,40 @@ function extentindex_from_frameindex(io, idx::CartesianIndex)
     error("can't find extent")
 end
 
-function trcsoffset(io::CSeis, extentindex, idx)
+function trcsoffset(io::CSeis, extentindex, frameidx)
     nsamples = size(io,1)
     ntraces = size(io,2)
     nframes = length(io.extents[extentindex].frameindices)
     frstframe = io.extents[extentindex].frameindices[1]
 
-    frameidx = LinearIndices(io)[idx]
     sizeof(Int)*nframes + io.hdrlength*ntraces*nframes + sizeof(io.traceformat)*nsamples*ntraces*(frameidx-frstframe) + 1
 end
 
-function hdrsoffset(io::CSeis, extentindex, idx)
+function hdrsoffset(io::CSeis, extentindex, frameidx)
     ntraces = size(io,2)
     nframes = length(io.extents[extentindex].frameindices)
     frstframe = io.extents[extentindex].frameindices[1]
-
-    frameidx = LinearIndices(io)[idx]
     sizeof(Int)*nframes + io.hdrlength*ntraces*(frameidx-frstframe) + 1
 end
 
-function getframetrcs(io::CSeis, extentindex, idx::CartesianIndex)
+function getframetrcs(io::CSeis, extentindex, idx::Int)
     data = io.cache.data
 
     frstbyte = trcsoffset(io, extentindex, idx)
     lastbyte = frstbyte + size(io,2)*size(io,1)*sizeof(io.traceformat) - 1
     reshape(reinterpret(io.traceformat, view(data,frstbyte:lastbyte)), :, size(io,2))
 end
-getframetrcs(io::CSeis, idx::CartesianIndex) = getframetrcs(io, cache!(io, idx), idx)
+getframetrcs(io::CSeis, idx::CartesianIndex) = getframetrcs(io, cache!(io, idx), linearframeidx(io, idx))
 getframetrcs(io::CSeis, idx...) = getframetrcs(io, CartesianIndex(idx))
 
-function getframehdrs(io::CSeis, extentindex, idx::CartesianIndex)
+function getframehdrs(io::CSeis, extentindex, idx::Int)
     data = io.cache.data
 
     frstbyte = hdrsoffset(io, extentindex, idx)
     lastbyte = frstbyte + size(io,2)*io.hdrlength - 1
     reshape(view(data,frstbyte:lastbyte), :, size(io,2))
 end
-getframehdrs(io::CSeis, idx::CartesianIndex) = getframehdrs(io, cache!(io, idx), idx)
+getframehdrs(io::CSeis, idx::CartesianIndex) = getframehdrs(io, cache!(io, idx), linearframeidx(io, idx))
 getframehdrs(io::CSeis, idx...) = getframehdrs(io, CartesianIndex(idx))
 
 getframe(io::CSeis, idx) = getframetrcs(io, idx), getframehdrs(io, idx)
@@ -1333,7 +1378,7 @@ parseindex(rng::NTuple{N,AbstractRange}, idx_n::CartesianIndex) where {N} = Cart
 function readtrcs_impl!(io::CSeis, trcs::AbstractArray, smprng::AbstractRange{Int}, trcrng::AbstractRange{Int}, rng::Vararg{Union{Colon,Int,AbstractRange{Int}},N}) where {N}
     n = ntuple(i->length(rng[i]), N)::NTuple{N,Int}
     for idx_n in CartesianIndices(n)
-        idx = parseindex(rng, idx_n)
+        idx = cartesianframeidx(io, parseindex(rng, idx_n))
         frmtrcs = getframetrcs(io, idx)
         for (itrc,trc) in enumerate(trcrng), (ismp,smp) in enumerate(smprng)
             trcs[ismp,itrc,idx_n] = frmtrcs[smp,trc]
@@ -1386,7 +1431,7 @@ end
 function readhdrs_impl!(io::CSeis, hdrs::AbstractArray, trcrng::AbstractRange{Int}, rng::Vararg{Union{Colon,Int,AbstractRange{Int}},N}) where {N}
     n = ntuple(i->length(rng[i]), N)::NTuple{N,Int}
     for idx_n in CartesianIndices(n)
-        idx = parseindex(rng, idx_n)
+        idx = cartesianframeidx(io, parseindex(rng, idx_n))
         frmhdrs = getframehdrs(io, idx)
         for (itrc,trc) in enumerate(trcrng), ismp in 1:headerlength(io)
             hdrs[ismp,itrc,idx_n] = frmhdrs[ismp,trc]
@@ -1476,7 +1521,7 @@ function write_helper(io::CSeis, trcs, frmtrcs, smprng, trcrng, nrng, _rng::NTup
 
     props = map(idim->prop(io,io.axis_propdefs[idim]), 1:ndims(io))
     for idx_n in CartesianIndices(n)
-        idx = parseindex(_rng, idx_n)
+        idx = cartesianframeidx(io, parseindex(_rng, idx_n))
 
         frmtrcs = getframetrcs(io, idx)
         for (itrc,trc) in enumerate(trcrng), (ismp,smp) in enumerate(smprng)
@@ -1484,7 +1529,7 @@ function write_helper(io::CSeis, trcs, frmtrcs, smprng, trcrng, nrng, _rng::NTup
         end
 
         for itrace = 1:io.axis_lengths[2]
-            set!(props[2], frmhdrs, itrace, itrace)
+            set!(props[2], frmhdrs, itrace, cartesiantraceidx(io, itrace))
             for idim = 3:ndims(io)
                 set!(props[idim], frmhdrs, itrace, idx[idim-2])
             end
@@ -1648,6 +1693,26 @@ TeaSeis.pstarts(io::CSeis,i) = io.axis_pstarts[i]
 TeaSeis.pstarts(io::CSeis) = io.axis_pstarts
 
 """
+    lincs(io::CSeis[,i])
+
+Return the logical increment for the data-context axes.
+If `i` is specfied, then return the logical increment for
+the ith data-context axis
+"""
+TeaSeis.lincs(io::CSeis,i) = io.axis_lincs[i]
+TeaSeis.lincs(io::CSeis) = io.axis_lincs
+
+"""
+    lstarts(io::CSeis[,i])
+
+Return the logical start for the data-context axes.
+If `i` is specfied, then return the logical start for
+the ith data-context axis
+"""
+TeaSeis.lstarts(io::CSeis,i) = io.axis_lstarts[i]
+TeaSeis.lstarts(io::CSeis) = io.axis_lstarts
+
+"""
     units(io::CSeis[,i])
 
 Return the physical unit for the data-context axes.
@@ -1767,6 +1832,8 @@ cscreate,
 csopen,
 hasdataproperty,
 headerlength,
+lincs,
+lstarts,
 pincs,
 prop,
 propdefs,
