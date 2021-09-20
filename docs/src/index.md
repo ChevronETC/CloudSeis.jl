@@ -393,6 +393,10 @@ pstarts(io)            # returns `NTuple{Float64}`, physical starts along all di
 pstarts(io,i)          # returns `Float64`, physical start along dimension `i::Int`
 pincs(io)              # returns `NTuple{Float64}`, physical increments along all dimensions
 pincs(io,i)            # returns `Float64`, physical increment along dimension `i::Int`
+lstarts(io)            # returns `NTuple{Int}`, logical starts along all dimensions
+lstarts(io,i)          # returns `Int`, logical start along dimension `i::Int`
+lincs(io)              # returns `NTuple{Int}`, logical increments along all dimensions
+lincs(io,i)            # returns `Int`, logical increment along dimension `i::Int`
 in(prop,io)            # returns true if the trace property `prop` exists in `io` --  `prop` can be of types `::TraceProperty`, `::TracePropertyDef`, or `::String`
 dataproperty(io,nm)    # returns the value held in the data property: `nm::String`
 hasdataproperty(io,nm) # returns true if the data property corresponding to label `nm::String` is in `io::CSeis`
