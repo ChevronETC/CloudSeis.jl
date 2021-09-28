@@ -144,10 +144,10 @@ Write a frame.  The frame, volume, etc. indices are determined from the trace pr
 writeframe(io, trcs, hdrs)
 ```
 
-To loop over all frames in a dataset of arbitrary dimensions, use Julia's
-`CartesianIndices`:
+To loop over all frames in a dataset of arbitrary dimensions, use
+`LogicalIndices`:
 ```julia
-for idx in CartesianIndices(size(io)[3:end])
+for idx in LogicalIndices(io)
   trcs, hdrs = readframe(io, idx)
 end
 ```
