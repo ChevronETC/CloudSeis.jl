@@ -1030,7 +1030,7 @@ function TeaSeis.regularize!(io::CSeis, fld, trcs::AbstractArray{Float32, 2}, hd
     end
     for i = 1:ntrcs
         if trace_mask[i] == 0
-            set!(proptrc, hdrs, i, cartesiantraceidx(io, i))
+            set!(proptrc, hdrs, i, logicaltraceidx(io, i))
             set!(proptyp, hdrs, i, tracetype[:dead])
             trcs[:,i] .= 0
         end
@@ -1168,9 +1168,9 @@ linearframeidx(io, idx::NTuple{N,Int}) where {N} = LinearIndices(io)[CartesianIn
 linearframeidx(io, idx::CartesianIndex) = linearframeidx(io, idx.I)
 linearframeidx(io, idx::Int...) = linearframeidx(io, idx)
 
-cartesianframeidx(io, idx::NTuple{N,Int}) where {N} = CartesianIndex(ntuple(idim->io.axis_lstarts[2+idim] + io.axis_lincs[2+idim]*(idx[idim] - 1), N))
-cartesianframeidx(io, idx::CartesianIndex) = cartesianframeidx(io, idx.I)
-cartesianframeidx(io, idx::Int...) = cartesianframeidx(io, idx)
+logicalframeidx(io, idx::NTuple{N,Int}) where {N} = CartesianIndex(ntuple(idim->io.axis_lstarts[2+idim] + io.axis_lincs[2+idim]*(idx[idim] - 1), N))
+logicalframeidx(io, idx::CartesianIndex) = logicalframeidx(io, idx.I)
+logicalframeidx(io, idx::Int...) = logicalframeidx(io, idx)
 
 function lineartraceidx(io, idx)
     @boundscheck begin
@@ -1181,7 +1181,33 @@ function lineartraceidx(io, idx)
     div(idx - io.axis_lstarts[2], io.axis_lincs[2]) + 1
 end
 
-cartesiantraceidx(io, idx) = io.axis_lstarts[2] + io.axis_lincs[2]*(idx-1)
+logicaltraceidx(io, idx) = io.axis_lstarts[2] + io.axis_lincs[2]*(idx-1)
+
+"""
+    I = LogicalIndices(io::CSeis)
+
+Returns a construct similar to `CartesianIndices` that allows conversion from linear
+indices to cartesian indices that are offest by the logical starts and deltas of the
+CloudSeis data context.  In addition, `LogicalIndices` implements iteration for looping
+over all frames in a data-set.  For example,
+
+```julia
+io = csopen(AzContainer("foo"; storageaccount="bar))
+idx = LogicalIndices(io)[2] # get the index corresponding to the second frame in the data-set.
+for idx in LogicalIndices(io)
+    @show idx
+    trcs, hdrs = getframe(io, idx)
+end
+```
+"""
+struct LogicalIndices{T,N}
+    io::CSeis{T,N}
+end
+
+Base.getindex(c::LogicalIndices, i) = logicalframeidx(c.io, CartesianIndices(c.io.axis_lengths[3:end])[i])
+Base.length(c::LogicalIndices) = prod(size(c.io)[3:end])
+
+Base.iterate(c::LogicalIndices, state=1) = state > length(c) ? nothing : (c[state], state+1)
 
 function extentindex_from_frameindex(io, idx::CartesianIndex)
     frameidx = linearframeidx(io, idx)
@@ -1378,7 +1404,7 @@ parseindex(rng::NTuple{N,AbstractRange}, idx_n::CartesianIndex) where {N} = Cart
 function readtrcs_impl!(io::CSeis, trcs::AbstractArray, smprng::AbstractRange{Int}, trcrng::AbstractRange{Int}, rng::Vararg{Union{Colon,Int,AbstractRange{Int}},N}) where {N}
     n = ntuple(i->length(rng[i]), N)::NTuple{N,Int}
     for idx_n in CartesianIndices(n)
-        idx = cartesianframeidx(io, parseindex(rng, idx_n))
+        idx = logicalframeidx(io, parseindex(rng, idx_n))
         frmtrcs = getframetrcs(io, idx)
         for (itrc,trc) in enumerate(trcrng), (ismp,smp) in enumerate(smprng)
             trcs[ismp,itrc,idx_n] = frmtrcs[smp,trc]
@@ -1431,7 +1457,7 @@ end
 function readhdrs_impl!(io::CSeis, hdrs::AbstractArray, trcrng::AbstractRange{Int}, rng::Vararg{Union{Colon,Int,AbstractRange{Int}},N}) where {N}
     n = ntuple(i->length(rng[i]), N)::NTuple{N,Int}
     for idx_n in CartesianIndices(n)
-        idx = cartesianframeidx(io, parseindex(rng, idx_n))
+        idx = logicalframeidx(io, parseindex(rng, idx_n))
         frmhdrs = getframehdrs(io, idx)
         for (itrc,trc) in enumerate(trcrng), ismp in 1:headerlength(io)
             hdrs[ismp,itrc,idx_n] = frmhdrs[ismp,trc]
@@ -1521,7 +1547,7 @@ function write_helper(io::CSeis, trcs, frmtrcs, smprng, trcrng, nrng, _rng::NTup
 
     props = map(idim->prop(io,io.axis_propdefs[idim]), 1:ndims(io))
     for idx_n in CartesianIndices(n)
-        idx = cartesianframeidx(io, parseindex(_rng, idx_n))
+        idx = logicalframeidx(io, parseindex(_rng, idx_n))
 
         frmtrcs = getframetrcs(io, idx)
         for (itrc,trc) in enumerate(trcrng), (ismp,smp) in enumerate(smprng)
@@ -1529,7 +1555,7 @@ function write_helper(io::CSeis, trcs, frmtrcs, smprng, trcrng, nrng, _rng::NTup
         end
 
         for itrace = 1:io.axis_lengths[2]
-            set!(props[2], frmhdrs, itrace, cartesiantraceidx(io, itrace))
+            set!(props[2], frmhdrs, itrace, logicaltraceidx(io, itrace))
             for idim = 3:ndims(io)
                 set!(props[idim], frmhdrs, itrace, idx[idim-2])
             end
@@ -1812,6 +1838,7 @@ function Base.copy!(ioout::CSeis, hdrsout::AbstractArray{UInt8,2}, ioin::CSeis, 
 end
 
 export
+LogicalIndices,
 DataProperty,
 Geometry,
 TracePropertyDef,

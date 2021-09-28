@@ -713,13 +713,13 @@ const compressors = ("none","blosc","leftjustify")
         @test CloudSeis.linearframeidx(io, 14) == 4
 
         # test map from unitary to non-unitary cartesian index
-        @test CloudSeis.cartesianframeidx(io, 1) == CartesianIndex((5,))
-        @test CloudSeis.cartesianframeidx(io, 2) == CartesianIndex((8,))
-        @test CloudSeis.cartesianframeidx(io, 3) == CartesianIndex((11,))
-        @test CloudSeis.cartesianframeidx(io, 4) == CartesianIndex((14,))
+        @test CloudSeis.logicalframeidx(io, 1) == CartesianIndex((5,))
+        @test CloudSeis.logicalframeidx(io, 2) == CartesianIndex((8,))
+        @test CloudSeis.logicalframeidx(io, 3) == CartesianIndex((11,))
+        @test CloudSeis.logicalframeidx(io, 4) == CartesianIndex((14,))
 
         @test CloudSeis.lineartraceidx(io, 2) == 1
-        @test CloudSeis.cartesiantraceidx(io, 1) == 2
+        @test CloudSeis.logicaltraceidx(io, 1) == 2
 
         rm(io)
     end
@@ -824,5 +824,48 @@ const compressors = ("none","blosc","leftjustify")
         io = csopen(mkcontainer(cloud, "test-$r-cs"), axis_lengths=[10,11,12], force=true)
         @test lstarts(io) == (1,1,1)
         @test lincs(io) == (1,1,1)
+    end
+
+    @testset "frame iterator, LogicalIndices" begin
+        sleep(1)
+        r = lowercase(randstring(MersenneTwister(millisecond(now())+39),4))
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], force=true)
+        idxs = CartesianIndex[]
+        for idx in LogicalIndices(io)
+            push!(idxs, idx)
+        end
+        _idxs = [CartesianIndex((i,)) for i=1:12]
+        @test idxs == _idxs
+        rm(io)
+
+        r = lowercase(randstring(MersenneTwister(millisecond(now())+40),4))
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_lstarts=[1,1,3], axis_lincs=[1,1,4], force=true)
+        idxs = CartesianIndex[]
+        for idx in LogicalIndices(io)
+            push!(idxs, idx)
+        end
+        _idxs = [CartesianIndex((3 + (i-1)*4,)) for i=1:12]
+        @test idxs == _idxs
+        rm(io)
+
+        r = lowercase(randstring(MersenneTwister(millisecond(now())+41),4))
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,4,6], force=true)
+        idxs = CartesianIndex[]
+        for idx in LogicalIndices(io)
+            push!(idxs, idx)
+        end
+        _idxs = [CartesianIndex((i,j)) for i=1:4, j=1:6][:]
+        @test idxs == _idxs
+        rm(io)
+
+        r = lowercase(randstring(MersenneTwister(millisecond(now())+42),4))
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,4,6], axis_lstarts=[1,1,2,3], axis_lincs=[1,1,4,5], force=true)
+        idxs = CartesianIndex[]
+        for idx in LogicalIndices(io)
+            push!(idxs, idx)
+        end
+        _idxs = [CartesianIndex((2+(i-1)*4,3+(j-1)*5)) for i=1:4, j=1:6][:]
+        @test idxs == _idxs
+        rm(io)
     end
 end
