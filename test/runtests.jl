@@ -868,4 +868,11 @@ const compressors = ("none","blosc","leftjustify")
         @test idxs == _idxs
         rm(io)
     end
+
+    @testset "partial read for foldmap with empty extents" begin
+        sleep(1)
+        r = lowercase(randstring(MersenneTwister(millisecond(now())+43),4))
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], force=true)
+        @test fold(io,1) == 0
+    end
 end

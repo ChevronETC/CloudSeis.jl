@@ -826,13 +826,19 @@ function cache_foldmap!(io::Union{CSeis{T,N,NotACompressor}, CSeis{T,N,LeftJusti
         return extentindex
     end
 
-    @debug "reading foldmap for extent $extentindex from block-storage..."
-    t = @elapsed begin
-        io.cache.data = read!(io.extents[extentindex].container, io.extents[extentindex].name, Vector{UInt8}(undef, cachesize_foldmap(io, extentindex)))
+    if isfile(io.extents[extentindex].container, io.extents[extentindex].name)
+        @debug "reading foldmap for extent $extentindex from block-storage..."
+        t = @elapsed begin
+            io.cache.data = read!(io.extents[extentindex].container, io.extents[extentindex].name, Vector{UInt8}(undef, cachesize_foldmap(io, extentindex)))
+        end
+        mb = length(io.cache.data)/1_000_000
+        mbps = mb/t
+        @debug "...foldmap read ($mbps MB/s -- $mb MB)"
+    else
+        @debug "creating cache..."
+        io.cache.data = zeros(UInt8, cachesize_foldmap(io, extentindex))
+        @debug "...done creating cache."
     end
-    mb = length(io.cache.data)/1_000_000
-    mbps = mb/t
-    @debug "...foldmap read ($mbps MB/s -- $mb MB)"
     io.cache.extentindex = extentindex
     io.cache.type = CACHE_FOLDMAP
 
