@@ -1082,6 +1082,36 @@ function TeaSeis.leftjustify!(io::CSeis, trcs::AbstractArray{Float32, 2}, hdrs::
 end
 
 """
+    leftjustify!(io::CSeis, hdrs)
+
+Convenience method to move all live traces to the beginning of its frame.
+"""
+function TeaSeis.leftjustify!(io::CSeis, hdrs::AbstractArray{UInt8, 2})
+    if fold(io, hdrs) == io.axis_lengths[2]
+        return
+    end
+    proptyp = prop(io, "TRC_TYPE", Int32)
+    j,ntrcs,nhead = 1,size(hdrs, 2),size(hdrs,1)
+    for i = 1:ntrcs
+        if get(proptyp, hdrs, i) != tracetype[:live]
+            j = i+1
+            while j <= ntrcs
+                if get(proptyp, hdrs, j) == tracetype[:live]
+                    for k = 1:nhead
+                        tmp = hdrs[k,i]
+                        hdrs[k,i] = hdrs[k,j]
+                        hdrs[k,j] = tmp
+                    end
+                    break
+                end
+                j += 1
+            end
+            j >= ntrcs && break
+        end
+    end
+end
+
+"""
     get(prop::TraceProperty, hdr::Vector)
 
 Returns the vale of a trace header property for the trace header `hdr`.

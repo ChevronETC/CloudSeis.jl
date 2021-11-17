@@ -875,4 +875,30 @@ const compressors = ("none","blosc","leftjustify")
         io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], force=true)
         @test fold(io,1) == 0
     end
+
+    @testset "left justify headers" begin
+        sleep(1)
+        r = lowercase(randstring(MersenneTwister(millisecond(now())+44),4))
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,12,1], force=true)
+
+        h = allocframehdrs(io)
+        for itrace = 1:12
+            set!(prop(io, stockprop[:TRACE]), h, itrace, itrace)
+            set!(prop(io, stockprop[:FRAME]), h, itrace, 1)
+            if rem(itrace,2) == 0
+                set!(prop(io, stockprop[:TRC_TYPE]), h, itrace, tracetype[:live])
+            else
+                set!(prop(io, stockprop[:TRC_TYPE]), h, itrace, tracetype[:dead])
+            end
+        end
+
+        CloudSeis.leftjustify!(io, h)
+        for itrace = 1:6
+            @test get(prop(io, stockprop[:TRC_TYPE]), h, itrace) == tracetype[:live]
+            @test get(prop(io, stockprop[:TRACE]), h, itrace) == 2*itrace
+        end
+        for itrace = 7:12
+            @test get(prop(io, stockprop[:TRC_TYPE]), h, itrace) == tracetype[:dead]
+        end
+    end
 end
