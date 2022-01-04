@@ -902,3 +902,80 @@ const compressors = ("none","blosc","leftjustify")
         end
     end
 end
+
+@testset "CloudSeis optimzed read, cloud=$cloud" for cloud in clouds
+    sleep(1)
+    r = lowercase(randstring(MersenneTwister(millisecond(now())+45),4))
+    io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,12,3], force=true)
+
+    t,h = allocframe(io)
+
+    for iframe = 1:3
+        for itrace = 1:12
+            set!(prop(io, stockprop[:TRACE]), h, itrace, itrace)
+            set!(prop(io, stockprop[:FRAME]), h, itrace, iframe)
+            if rem(itrace,2) == 0
+                set!(prop(io, stockprop[:TRC_TYPE]), h, itrace, tracetype[:live])
+                t[:,itrace] .= itrace*iframe
+            else
+                set!(prop(io, stockprop[:TRC_TYPE]), h, itrace, tracetype[:dead])
+                t[:,itrace] .= 0
+            end
+        end
+
+        writeframe(io, t, h)
+    end
+
+    close(io)
+    io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "r")
+
+    for iframe = 1:3
+        _t,_h = readframe(io, iframe; regularize=false)
+
+        for itrace = 1:6
+            @test _t[:,itrace] ≈ 2*itrace*iframe*ones(Float32,10)
+            @test get(prop(io, stockprop[:TRACE]), _h, itrace) == 2*itrace
+            @test get(prop(io, stockprop[:FRAME]), _h, itrace) == iframe
+            @test get(prop(io, stockprop[:TRC_TYPE]), _h, itrace) == tracetype[:live]
+        end
+
+        for itrace = 7:12
+            @test get(prop(io, stockprop[:TRC_TYPE]), _h, itrace) == tracetype[:dead]
+        end
+    end
+
+    rm(io)
+end
+
+@testset "CloudSeis optimzed read empty frame, cloud=$cloud" for cloud in clouds
+    sleep(1)
+    r = lowercase(randstring(MersenneTwister(millisecond(now())+46),4))
+    io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,12,2], force=true)
+
+    t,h = allocframe(io)
+
+    for itrace = 1:12
+        set!(prop(io, stockprop[:TRACE]), h, itrace, itrace)
+        set!(prop(io, stockprop[:FRAME]), h, itrace, 1)
+        if rem(itrace,2) == 0
+            set!(prop(io, stockprop[:TRC_TYPE]), h, itrace, tracetype[:live])
+            t[:,itrace] .= itrace
+        else
+            set!(prop(io, stockprop[:TRC_TYPE]), h, itrace, tracetype[:dead])
+            t[:,itrace] .= 0
+        end
+    end
+
+    writeframe(io, t, h)
+
+    close(io)
+    io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "r")
+
+    _t,_h = readframe(io, 2; regularize=false)
+
+    for itrace = 1:12
+        @test get(prop(io, stockprop[:TRC_TYPE]), _h, itrace) == tracetype[:dead]
+    end
+
+    rm(io)
+end
