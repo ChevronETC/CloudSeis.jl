@@ -101,7 +101,7 @@ Base.length(extent::Extent) = length(extent.frameindices)
 const CACHE_NONE = 0
 const CACHE_FOLDMAP = 1
 const CACHE_ALL = 2
-const CACHE_ALL_REGULARIZED = 3
+const CACHE_ALL_LEFT_JUSTIFY = 3
 
 # compression algorithms <--
 abstract type AbstractCompressor end
@@ -800,7 +800,7 @@ function cache_from_file!(io::CSeis{T,N,LeftJustifyCompressor}, extentindex, reg
 end
 
 function cache!(io::CSeis, extentindex::Integer, regularize=true, force=false)
-    cachetype = regularize ? CACHE_ALL_REGULARIZED : CACHE_ALL
+    cachetype = regularize ? CACHE_ALL : CACHE_ALL_LEFT_JUSTIFY
     if extentindex == io.cache.extentindex && io.cache.type == cachetype && !force
         return extentindex
     end
@@ -833,7 +833,7 @@ function cache_foldmap!(io::Union{CSeis{T,N,NotACompressor}, CSeis{T,N,LeftJusti
     _partialcache_error() = error("partial caching is only allowed in read-only \"r\" mode")
     io.mode == "r" || _partialcache_error()
 
-    if extentindex == io.cache.extentindex && io.cache.type ∈ (CACHE_FOLDMAP,CACHE_ALL,CACHE_ALL_REGULARIZED) && !force
+    if extentindex == io.cache.extentindex && io.cache.type ∈ (CACHE_FOLDMAP,CACHE_ALL,CACHE_ALL_LEFT_JUSTIFY) && !force
         return extentindex
     end
 
@@ -857,7 +857,7 @@ function cache_foldmap!(io::Union{CSeis{T,N,NotACompressor}, CSeis{T,N,LeftJusti
 end
 
 function cache_foldmap!(io::CSeis{T,N,BloscCompressor}, extentindex::Integer, force=false) where {T,N}
-    if extentindex == io.cache.extentindex && io.cache.type ∈ (CACHE_ALL,CACHE_ALL_REGULARIZED) && !force
+    if extentindex == io.cache.extentindex && io.cache.type ∈ (CACHE_ALL,CACHE_ALL_LEFT_JUSTIFY) && !force
         return extentindex
     end
     # TODO - we can't to a partial cache here because of how the compression works.
