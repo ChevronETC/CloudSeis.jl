@@ -783,7 +783,7 @@ function cache_from_file!(io::CSeis{T,N,LeftJustifyCompressor}, extentindex, reg
             end
 
             # regularize the indivdual frames
-            for (jframe,iframe) = enumerate(io.extents[extentindex].frameindices)
+            Threads.@threads for (jframe,iframe) = collect(enumerate(io.extents[extentindex].frameindices))
                 regularize!(io, fmap[jframe], getframetrcs(io, true, extentindex, iframe), getframehdrs(io, true, extentindex, iframe))
             end
         end
