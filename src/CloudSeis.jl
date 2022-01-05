@@ -1036,8 +1036,8 @@ function TeaSeis.regularize!(io::CSeis, fld, trcs::AbstractArray{Float32, 2}, hd
     if fld == io.axis_lengths[2]
         return
     end
-    nsamp, nhead, ntrcs = size(trcs,1), size(hdrs,1), size(trcs,2)
-    proptrc, proptyp = prop(io, io.axis_propdefs[2]), prop(io, stockprop[:TRC_TYPE])
+    ntrcs = size(trcs,2)
+    proptrc, proptyp = prop(io, io.axis_propdefs[2]), prop(io, "TRC_TYPE", Int32)
     trace_mask = zeros(Int, ntrcs)
     for i = fld:-1:1
         ii = lineartraceidx(io, get(proptrc, hdrs, i))
