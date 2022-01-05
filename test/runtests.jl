@@ -947,7 +947,7 @@ end
     rm(io)
 end
 
-@testset "CloudSeis optimzed read empty frame, cloud=$cloud" for cloud in clouds
+@testset "CloudSeis optimized read empty frame, cloud=$cloud" for cloud in clouds
     sleep(1)
     r = lowercase(randstring(MersenneTwister(millisecond(now())+46),4))
     io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,12,2], force=true)
@@ -975,6 +975,49 @@ end
 
     for itrace = 1:12
         @test get(prop(io, stockprop[:TRC_TYPE]), _h, itrace) == tracetype[:dead]
+    end
+
+    rm(io)
+end
+
+@testset "CloudSeis optimized read, mixing regularize on/off, cloud=$cloud" for cloud in clouds
+    sleep(1)
+    r = lowercase(randstring(MersenneTwister(millisecond(now())+46),4))
+    io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,12,2], force=true)
+
+    t,h = allocframe(io)
+
+    for iframe = 1:2
+        for itrace = 1:12
+            set!(prop(io, stockprop[:TRACE]), h, itrace, itrace)
+            set!(prop(io, stockprop[:FRAME]), h, itrace, iframe)
+            if rem(itrace,2) == 0
+                set!(prop(io, stockprop[:TRC_TYPE]), h, itrace, tracetype[:live])
+                t[:,itrace] .= itrace*iframe
+            else
+                set!(prop(io, stockprop[:TRC_TYPE]), h, itrace, tracetype[:dead])
+                t[:,itrace] .= 0
+            end
+        end
+
+        writeframe(io, t, h)
+    end
+
+    close(io)
+    io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "r")
+
+    _t,_h = readframe(io, 1; regularize=false)
+    _t,_h = readframe(io, 2)
+
+    for itrace = 1:12
+        if rem(itrace,2) == 0
+            @test _t[:,itrace] ≈ itrace*2*ones(Float32,10)
+            @test get(prop(io, stockprop[:TRACE]), _h, itrace) == itrace
+            @test get(prop(io, stockprop[:FRAME]), _h, itrace) == 2
+            @test get(prop(io, stockprop[:TRC_TYPE]), _h, itrace) == tracetype[:live]
+        else
+            @test get(prop(io, stockprop[:TRC_TYPE]), _h, itrace) == tracetype[:dead]
+        end
     end
 
     rm(io)
