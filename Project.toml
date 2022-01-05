@@ -1,6 +1,6 @@
 name = "CloudSeis"
 uuid = "a8ea0714-0c8b-51e5-9b11-67a2d82946d2"
-version = "1.5.0"
+version = "1.6.0"
 
 [deps]
 AbstractStorage = "14dbef02-f468-5f15-853e-5ec8dee7b899"
