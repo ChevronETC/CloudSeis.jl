@@ -101,6 +101,7 @@ Base.length(extent::Extent) = length(extent.frameindices)
 const CACHE_NONE = 0
 const CACHE_FOLDMAP = 1
 const CACHE_ALL = 2
+const CACHE_ALL_LEFT_JUSTIFY = 3
 
 # compression algorithms <--
 abstract type AbstractCompressor end
@@ -696,7 +697,7 @@ function cachesize_foldmap(io::CSeis, extentindex)
     nframes*sizeof(Int)
 end
 
-function cache_from_file!(io::CSeis{T,N,NotACompressor}, extentindex) where {T,N}
+function notacompressor_cache_from_file!(io::CSeis, extentindex)
     @debug "reading extent $extentindex from block-storage..."
     t = @elapsed begin
         io.cache.data = read!(io.extents[extentindex].container, io.extents[extentindex].name, Vector{UInt8}(undef, filesize(io.extents[extentindex].container, io.extents[extentindex].name)))
@@ -706,8 +707,13 @@ function cache_from_file!(io::CSeis{T,N,NotACompressor}, extentindex) where {T,N
     @debug "...data read ($mbps MB/s -- $mb MB)"
     nothing
 end
+function cache_from_file!(io::CSeis{T,N,NotACompressor}, extentindex, regularize) where {T,N}
+    regularize || error("'regularize=false' is not supported for 'NotACompressor'")
+    notacompressor_cache_from_file!(io, extentindex)
+end
 
-function cache_from_file!(io::CSeis{T,N,BloscCompressor}, extentindex) where {T,N}
+function cache_from_file!(io::CSeis{T,N,BloscCompressor}, extentindex, regularize) where {T,N}
+    regularize || error("regularize=false is not supported for 'BloscCompressor'")
     @debug "reading and decompressing extent $extentindex..."
     t_read = @elapsed begin
         cdata = read!(io.extents[extentindex].container, io.extents[extentindex].name, Vector{UInt8}(undef, filesize(io.extents[extentindex].container, io.extents[extentindex].name)))
@@ -755,42 +761,47 @@ function compressed_offsets(io::CSeis{T,N,LeftJustifyCompressor}, extentindex) w
     trc_offsets,hdr_offsets,fmap,nframes,_headerlength
 end
 
-function cache_from_file!(io::CSeis{T,N,LeftJustifyCompressor}, extentindex) where {T,N}
-    @debug "reading and decompressing extent $extentindex..."
-    t_read = @elapsed begin
-        io.cache.data = Vector{UInt8}(undef, cachesize(io, extentindex))
-        cdata = unsafe_wrap(Array, pointer(io.cache.data), (filesize(io.extents[extentindex].container, io.extents[extentindex].name),); own=false)
-        read!(io.extents[extentindex].container, io.extents[extentindex].name, cdata)
-        io.cache.data[1:length(cdata)] .= cdata
+function cache_from_file!(io::CSeis{T,N,LeftJustifyCompressor}, extentindex, regularize) where {T,N}
+    if regularize
+        @debug "reading and decompressing extent $extentindex..."
+        t_read = @elapsed begin
+            io.cache.data = Vector{UInt8}(undef, cachesize(io, extentindex))
+            cdata = unsafe_wrap(Array, pointer(io.cache.data), (filesize(io.extents[extentindex].container, io.extents[extentindex].name),); own=false)
+            read!(io.extents[extentindex].container, io.extents[extentindex].name, cdata)
+            io.cache.data[1:length(cdata)] .= cdata
+        end
+
+        t_decompress = @elapsed begin
+            compressed_trc_offsets,compressed_hdr_offsets,fmap,nframes,_headerlength = compressed_offsets(io, extentindex)
+
+            for iframe = nframes:-1:1
+                copyto!(io.cache.data, trcsoffset(io, true, extentindex, io.extents[extentindex].frameindices[iframe]), io.cache.data, compressed_trc_offsets[iframe], fmap[iframe]*size(io,1)*sizeof(io.traceformat))
+            end
+
+            for iframe = nframes:-1:1
+                copyto!(io.cache.data, hdrsoffset(io, true, extentindex, io.extents[extentindex].frameindices[iframe]), io.cache.data, compressed_hdr_offsets[iframe], fmap[iframe]*_headerlength)
+            end
+
+            # regularize the indivdual frames
+            for (jframe,iframe) = enumerate(io.extents[extentindex].frameindices)
+                regularize!(io, fmap[jframe], getframetrcs(io, true, extentindex, iframe), getframehdrs(io, true, extentindex, iframe))
+            end
+        end
+        mb = length(io.cache.data) / 1_000_000
+        mb_compressed = length(cdata) / 1_000_000
+        mbps_read = mb_compressed/t_read
+        mbps_decompress = mb / t_decompress
+        mbps = mb / (t_read + t_decompress)
+        @debug "...data read and decompressed (effective: $mbps MB/s; decompression: $mbps_decompress MB/s; read: $mbps_read MB/s -- $mb MB; $mb_compressed compressed MB)"
+    else
+        notacompressor_cache_from_file!(io, extentindex)
     end
-
-    t_decompress = @elapsed begin
-        compressed_trc_offsets,compressed_hdr_offsets,fmap,nframes,_headerlength = compressed_offsets(io, extentindex)
-
-        for iframe = nframes:-1:1
-            copyto!(io.cache.data, trcsoffset(io, extentindex, io.extents[extentindex].frameindices[iframe]), io.cache.data, compressed_trc_offsets[iframe], fmap[iframe]*size(io,1)*sizeof(io.traceformat))
-        end
-
-        for iframe = nframes:-1:1
-            copyto!(io.cache.data, hdrsoffset(io, extentindex, io.extents[extentindex].frameindices[iframe]), io.cache.data, compressed_hdr_offsets[iframe], fmap[iframe]*_headerlength)
-        end
-
-        # regularize the indivdual frames
-        for (jframe,iframe) = enumerate(io.extents[extentindex].frameindices)
-            regularize!(io, fmap[jframe], getframetrcs(io, extentindex, iframe), getframehdrs(io, extentindex, iframe))
-        end
-    end
-    mb = length(io.cache.data) / 1_000_000
-    mb_compressed = length(cdata) / 1_000_000
-    mbps_read = mb_compressed/t_read
-    mbps_decompress = mb / t_decompress
-    mbps = mb / (t_read + t_decompress)
-    @debug "...data read and decompressed (effective: $mbps MB/s; decompression: $mbps_decompress MB/s; read: $mbps_read MB/s -- $mb MB; $mb_compressed compressed MB)"
     nothing
 end
 
-function cache!(io::CSeis, extentindex::Integer, force=false)
-    if extentindex == io.cache.extentindex && io.cache.type == CACHE_ALL && !force
+function cache!(io::CSeis, extentindex::Integer, regularize=true, force=false)
+    cachetype = regularize ? CACHE_ALL : CACHE_ALL_LEFT_JUSTIFY
+    if extentindex == io.cache.extentindex && io.cache.type == cachetype && !force
         return extentindex
     end
 
@@ -799,21 +810,21 @@ function cache!(io::CSeis, extentindex::Integer, force=false)
     end
 
     if isfile(io.extents[extentindex].container, io.extents[extentindex].name)
-        cache_from_file!(io, extentindex)
+        cache_from_file!(io, extentindex, regularize)
     else
         @debug "creating cache..."
         io.cache.data = zeros(UInt8, cachesize(io, extentindex))
         @debug "...done creating cache."
     end
     io.cache.extentindex = extentindex
-    io.cache.type = CACHE_ALL
+    io.cache.type = cachetype
 
     extentindex
 end
 
-function cache!(io::CSeis, idx::CartesianIndex, force=false)
+function cache!(io::CSeis, idx::CartesianIndex, regularize=true, force=false)
     extentindex = extentindex_from_frameindex(io, idx)
-    cache!(io, extentindex, force)
+    cache!(io, extentindex, regularize, force)
 end
 
 cache(io::CSeis) = io.cache
@@ -822,7 +833,7 @@ function cache_foldmap!(io::Union{CSeis{T,N,NotACompressor}, CSeis{T,N,LeftJusti
     _partialcache_error() = error("partial caching is only allowed in read-only \"r\" mode")
     io.mode == "r" || _partialcache_error()
 
-    if extentindex == io.cache.extentindex && io.cache.type ∈ (CACHE_FOLDMAP,CACHE_ALL) && !force
+    if extentindex == io.cache.extentindex && io.cache.type ∈ (CACHE_FOLDMAP,CACHE_ALL,CACHE_ALL_LEFT_JUSTIFY) && !force
         return extentindex
     end
 
@@ -846,11 +857,11 @@ function cache_foldmap!(io::Union{CSeis{T,N,NotACompressor}, CSeis{T,N,LeftJusti
 end
 
 function cache_foldmap!(io::CSeis{T,N,BloscCompressor}, extentindex::Integer, force=false) where {T,N}
-    if extentindex == io.cache.extentindex && io.cache.type ∈ CACHE_ALL && !force
+    if extentindex == io.cache.extentindex && io.cache.type ∈ (CACHE_ALL,CACHE_ALL_LEFT_JUSTIFY) && !force
         return extentindex
     end
     # TODO - we can't to a partial cache here because of how the compression works.
-    cache!(io, extentindex, force)
+    cache!(io, extentindex, true, force)
     extentindex
 end
 
@@ -929,17 +940,17 @@ function Base.flush(io::CSeis{T,N,LeftJustifyCompressor}) where {T,N}
     @debug "compressing and writing extent $(io.cache.extentindex)..."
     t_compress = @elapsed begin
         for iframe in io.extents[io.cache.extentindex].frameindices
-            leftjustify!(io, getframetrcs(io, io.cache.extentindex, iframe), getframehdrs(io, io.cache.extentindex, iframe))
+            leftjustify!(io, getframetrcs(io, true, io.cache.extentindex, iframe), getframehdrs(io, true, io.cache.extentindex, iframe))
         end
 
         compressed_trc_offsets,compressed_hdr_offsets,fmap,nframes,_headerlength = compressed_offsets(io, io.cache.extentindex)
 
         for (iframe, jframe) in enumerate(io.extents[io.cache.extentindex].frameindices)
-            copyto!(io.cache.data, compressed_hdr_offsets[iframe], io.cache.data, hdrsoffset(io, io.cache.extentindex, jframe), fmap[iframe]*_headerlength)
+            copyto!(io.cache.data, compressed_hdr_offsets[iframe], io.cache.data, hdrsoffset(io, true, io.cache.extentindex, jframe), fmap[iframe]*_headerlength)
         end
 
         for (iframe, jframe) in enumerate(io.extents[io.cache.extentindex].frameindices)
-            copyto!(io.cache.data, compressed_trc_offsets[iframe], io.cache.data, trcsoffset(io, io.cache.extentindex, jframe), fmap[iframe]*size(io,1)*sizeof(io.traceformat))
+            copyto!(io.cache.data, compressed_trc_offsets[iframe], io.cache.data, trcsoffset(io, true, io.cache.extentindex, jframe), fmap[iframe]*size(io,1)*sizeof(io.traceformat))
         end
     end
     t_write = @elapsed begin
@@ -1257,43 +1268,73 @@ function extentindex_from_frameindex(io, idx::CartesianIndex)
     error("can't find extent")
 end
 
-function trcsoffset(io::CSeis, extentindex, frameidx)
+function trcsoffset(io::CSeis, regularize::Bool, extentindex, frameidx)
     nsamples = size(io,1)
+    nframes = length(io.extents[extentindex].frameindices)
+    frstframe = io.extents[extentindex].frameindices[1]
+
+    local ntraces_times_nframes, ntraces_times_frameidx
+    if regularize
+        ntraces = size(io,2)
+        ntraces_times_nframes = ntraces*nframes
+        ntraces_times_frameidx = ntraces*(frameidx-frstframe)
+    else
+        ntraces_times_nframes = mapreduce(frameindex->fold(io,frameindex), +, io.extents[extentindex].frameindices)
+        ntraces_times_frameidx = frstframe == frameidx ? 0 : mapreduce(frameidx->fold(io,frameidx), +, frstframe:(frameidx-1))
+    end
+
+    sizeof(Int)*nframes + io.hdrlength*ntraces_times_nframes + sizeof(io.traceformat)*nsamples*ntraces_times_frameidx + 1
+end
+
+function hdrsoffset(io::CSeis, regularize::Bool, extentindex, frameidx)
     ntraces = size(io,2)
     nframes = length(io.extents[extentindex].frameindices)
     frstframe = io.extents[extentindex].frameindices[1]
 
-    sizeof(Int)*nframes + io.hdrlength*ntraces*nframes + sizeof(io.traceformat)*nsamples*ntraces*(frameidx-frstframe) + 1
+    local ntraces_times_frameidx
+    if regularize
+        ntraces_times_frameidx = ntraces*(frameidx-frstframe)
+    else
+        ntraces_times_frameidx = frstframe == frameidx ? 0 : mapreduce(_frameidx->fold(io,_frameidx), +, frstframe:(frameidx-1))
+    end
+
+    offset = sizeof(Int)*nframes + io.hdrlength*ntraces_times_frameidx + 1
+    offset
 end
 
-function hdrsoffset(io::CSeis, extentindex, frameidx)
-    ntraces = size(io,2)
-    nframes = length(io.extents[extentindex].frameindices)
-    frstframe = io.extents[extentindex].frameindices[1]
-    sizeof(Int)*nframes + io.hdrlength*ntraces*(frameidx-frstframe) + 1
-end
-
-function getframetrcs(io::CSeis, extentindex, idx::Int)
+function getframetrcs(io::CSeis, regularize::Bool, extentindex, idx::Int)
     data = io.cache.data
 
-    frstbyte = trcsoffset(io, extentindex, idx)
-    lastbyte = frstbyte + size(io,2)*size(io,1)*sizeof(io.traceformat) - 1
-    reshape(reinterpret(io.traceformat, view(data,frstbyte:lastbyte)), :, size(io,2))
-end
-getframetrcs(io::CSeis, idx::CartesianIndex) = getframetrcs(io, cache!(io, idx), linearframeidx(io, idx))
-getframetrcs(io::CSeis, idx...) = getframetrcs(io, CartesianIndex(idx))
+    ntraces = regularize ? size(io,2) : fold(io,idx)
 
-function getframehdrs(io::CSeis, extentindex, idx::Int)
+    if ntraces == 0
+        return io.traceformat[]
+    end
+
+    frstbyte = trcsoffset(io, regularize, extentindex, idx)
+    lastbyte = frstbyte + ntraces*size(io,1)*sizeof(io.traceformat) - 1
+    reshape(reinterpret(io.traceformat, view(data,frstbyte:lastbyte)), :, ntraces)
+end
+getframetrcs(io::CSeis, regularize::Bool, idx::CartesianIndex) = getframetrcs(io, regularize, cache!(io, idx, regularize), linearframeidx(io, idx))
+getframetrcs(io::CSeis, regularize::Bool, idx...) = getframetrcs(io, regularize, CartesianIndex(idx))
+
+function getframehdrs(io::CSeis, regularize::Bool, extentindex, idx::Int)
     data = io.cache.data
 
-    frstbyte = hdrsoffset(io, extentindex, idx)
-    lastbyte = frstbyte + size(io,2)*io.hdrlength - 1
-    reshape(view(data,frstbyte:lastbyte), :, size(io,2))
-end
-getframehdrs(io::CSeis, idx::CartesianIndex) = getframehdrs(io, cache!(io, idx), linearframeidx(io, idx))
-getframehdrs(io::CSeis, idx...) = getframehdrs(io, CartesianIndex(idx))
+    ntraces = regularize ? size(io,2) : fold(io,idx)
 
-getframe(io::CSeis, idx) = getframetrcs(io, idx), getframehdrs(io, idx)
+    if ntraces == 0
+        return UInt8[]
+    end
+
+    frstbyte = hdrsoffset(io, regularize, extentindex, idx)
+    lastbyte = frstbyte + ntraces*io.hdrlength - 1
+    reshape(view(data,frstbyte:lastbyte), :, ntraces)
+end
+getframehdrs(io::CSeis, regularize::Bool, idx::CartesianIndex) = getframehdrs(io, regularize, cache!(io, idx, regularize), linearframeidx(io, idx))
+getframehdrs(io::CSeis, regularize::Bool, idx...) = getframehdrs(io, regularize, CartesianIndex(idx))
+
+getframe(io::CSeis, regularize::Bool, idx) = getframetrcs(io, regularize, idx), getframehdrs(io, regularize, idx)
 
 """
     trcs = allocframetrcs(io::CSeis)
@@ -1316,67 +1357,112 @@ Allocate and return memory to store traces and trace headers for a single frame.
 """
 TeaSeis.allocframe(io::CSeis) = allocframetrcs(io), allocframehdrs(io)
 
+function regularization_check(io, regularize)
+    if !regularize && !isa(io.cache.compressor, LeftJustifyCompressor)
+        error("regularize=false is only valid for compression method: LeftJustifyCompressor")
+    end
+end
+
 """
-    readframetrcs!(io::CSeis, trcs, idx...)
+    readframetrcs!(io::CSeis, trcs, idx...[; regularize=true])
 
 Read traces from `io` into `trcs::Matrix` for the frame `idx...`.
 `idx...` can either be integer(s) or a `CartesianIndex`.
+
+The `regularize` named argument is only applicable when the compression
+method is `LeftJustifyCompressor`.  If set to true, then traces are 
+regularized to their correct context locations.  Otherwise, they remain
+left justified.  Note that one can subsequently use the `regularize!` method.
 """
-function TeaSeis.readframetrcs!(io::CSeis, trcs::AbstractArray, idx::CartesianIndex)
-    _trcs = getframetrcs(io, idx)
-    copyto!(trcs, 1, _trcs, 1, size(io,1)*size(io,2))
+function TeaSeis.readframetrcs!(io::CSeis, trcs::AbstractArray, idx::CartesianIndex; regularize=true)
+    @boundscheck regularization_check(io, regularize)
+    _trcs = getframetrcs(io, regularize, idx)
+    copyto!(trcs, 1, _trcs, 1, length(_trcs))
 end
 
 """
-    trcs = readframetrcs(io::CSeis, idx...)
+    trcs = readframetrcs(io::CSeis, idx...; regularize=true)
 
 Read traces from `io` for the frame `idx...`.  `idx..` can either be
 integer(s) or a `CartesianIndex`.
-"""
-TeaSeis.readframetrcs(io::CSeis, idx::CartesianIndex) = readframetrcs!(io, allocframetrcs(io), idx)
 
-TeaSeis.readframetrcs!(io::CSeis, trcs::AbstractArray, idx...) = readframetrcs!(io, trcs, CartesianIndex(idx))
-TeaSeis.readframetrcs(io::CSeis, idx...) = readframetrcs(io, CartesianIndex(idx))
+The `regularize` named argument is only applicable when the compression
+method is `LeftJustifyCompressor`.  If set to true, then traces are 
+regularized to their correct context locations.  Otherwise, they remain
+left justified.  Note that one can subsequently use the `regularize!` method.
+"""
+TeaSeis.readframetrcs(io::CSeis, idx::CartesianIndex; regularize=true) = readframetrcs!(io, allocframetrcs(io), idx; regularize)
+
+TeaSeis.readframetrcs!(io::CSeis, trcs::AbstractArray, idx...; regularize=true) = readframetrcs!(io, trcs, CartesianIndex(idx); regularize)
+TeaSeis.readframetrcs(io::CSeis, idx...; regularize=true) = readframetrcs(io, CartesianIndex(idx); regularize)
 
 """
-    readframehdrs!(io::CSeis, trcs, idx...)
+    readframehdrs!(io::CSeis, trcs, idx...; regularize=true)
 
 Read headers from `io` into `hdrs::Matrix` for the frame `idx...`.
 `idx...` can either be integer(s) or a `CartesianIndex`.
+
+The `regularize` named argument is only applicable when the compression
+method is `LeftJustifyCompressor`.  If set to true, then traces are 
+regularized to their correct context locations.  Otherwise, they remain
+left justified.  Note that one can subsequently use the `regularize!` method.
 """
-function TeaSeis.readframehdrs!(io::CSeis, hdrs::AbstractArray{UInt8,2}, idx::CartesianIndex)
-    _hdrs = getframehdrs(io, idx)
-    copyto!(hdrs, 1, _hdrs, 1, io.hdrlength*size(io,2))
+function TeaSeis.readframehdrs!(io::CSeis, hdrs::AbstractArray{UInt8,2}, idx::CartesianIndex; regularize=true)
+    @boundscheck regularization_check(io, regularize)
+    _hdrs = getframehdrs(io, regularize, idx)
+    copyto!(hdrs, 1, _hdrs, 1, length(_hdrs))
+    if !regularize
+        prop_trctype = prop(io, stockprop[:TRC_TYPE])
+        for itrace = (fold(io, idx)+1):size(io, 2)
+            set!(prop_trctype, hdrs, itrace, tracetype[:dead])
+        end
+    end
+    hdrs
 end
 
 """
-    hdrs = readframehdrs(io::CSeis, idx...)
+    hdrs = readframehdrs(io::CSeis, idx...; regularize=true)
 
 Read headers from `io` for the frame `idx...`.  `idx..` can either be
 integer(s) or a `CartesianIndex`.
-"""
-TeaSeis.readframehdrs(io::CSeis, idx::CartesianIndex) = readframehdrs!(io, allocframehdrs(io), idx)
 
-TeaSeis.readframehdrs!(io::CSeis, hdrs::AbstractArray{UInt8,2}, idx...) = readframehdrs!(io, hdrs, CartesianIndex(idx))
-TeaSeis.readframehdrs(io::CSeis, idx...) = readframehdrs(io, CartesianIndex(idx))
+The `regularize` named argument is only applicable when the compression
+method is `LeftJustifyCompressor`.  If set to true, then traces are 
+regularized to their correct context locations.  Otherwise, they remain
+left justified.  Note that one can subsequently use the `regularize!` method.
+"""
+TeaSeis.readframehdrs(io::CSeis, idx::CartesianIndex; regularize=true) = readframehdrs!(io, allocframehdrs(io), idx; regularize)
+
+TeaSeis.readframehdrs!(io::CSeis, hdrs::AbstractArray{UInt8,2}, idx...; regularize=true) = readframehdrs!(io, hdrs, CartesianIndex(idx); regularize)
+TeaSeis.readframehdrs(io::CSeis, idx...) = readframehdrs(io, CartesianIndex(idx); regularize)
 
 """
-    readframe!(io::CSeis, trcs, hdrs, idx...)
+    readframe!(io::CSeis, trcs, hdrs, idx...; regularize=true)
 
 Read traces and headers from `io` into `trcs::Matrix`, and `hdrs::Matrix` for the frame `idx...`.
 `idx...` can either be integer(s) or a `CartesianIndex`.
+
+The `regularize` named argument is only applicable when the compression
+method is `LeftJustifyCompressor`.  If set to true, then traces are 
+regularized to their correct context locations.  Otherwise, they remain
+left justified.  Note that one can subsequently use the `regularize!` method.
 """
-TeaSeis.readframe!(io::CSeis, trcs::AbstractArray, hdrs::AbstractArray{UInt8,2}, idx::CartesianIndex) = readframetrcs!(io, trcs, idx), readframehdrs!(io, hdrs, idx)
+TeaSeis.readframe!(io::CSeis, trcs::AbstractArray, hdrs::AbstractArray{UInt8,2}, idx::CartesianIndex; regularize=true) = readframetrcs!(io, trcs, idx; regularize), readframehdrs!(io, hdrs, idx; regularize)
 
 """
-    trcs,hdrs = readframe(io::CSeis, idx...)
+    trcs,hdrs = readframe(io::CSeis, idx...; regularize=true)
 
 Read traces and headers from `io` for the frame `idx...`.  `idx...` can
 either be integer(s) or a `CartesianIndex`.
+
+The `regularize` named argument is only applicable when the compression
+method is `LeftJustifyCompressor`.  If set to true, then traces are 
+regularized to their correct context locations.  Otherwise, they remain
+left justified.  Note that one can subsequently use the `regularize!` method.
 """
-TeaSeis.readframe(io::CSeis, idx::CartesianIndex) = readframe!(io, allocframetrcs(io), allocframehdrs(io), idx)
-TeaSeis.readframe!(io::CSeis, trcs::AbstractArray, hdrs::AbstractArray{UInt8,2}, idx...) = readframe!(io, trcs, hdrs, CartesianIndex(idx))
-TeaSeis.readframe(io::CSeis, idx...) = readframe(io, CartesianIndex(idx))
+TeaSeis.readframe(io::CSeis, idx::CartesianIndex; regularize=true) = readframe!(io, allocframetrcs(io), allocframehdrs(io), idx; regularize)
+TeaSeis.readframe!(io::CSeis, trcs::AbstractArray, hdrs::AbstractArray{UInt8,2}, idx...; regularize=true) = readframe!(io, trcs, hdrs, CartesianIndex(idx); regularize)
+TeaSeis.readframe(io::CSeis, idx...; regularize=true) = readframe(io, CartesianIndex(idx); regularize)
 
 """
     writeframe(io::CSeis, trcs, hdrs)
@@ -1389,8 +1475,8 @@ function TeaSeis.writeframe(io::CSeis, trcs::AbstractArray, hdrs::AbstractArray{
     cache!(io, idx)
     fld = fold(io, hdrs)
     fold!(io, fld, idx)
-    _trcs = getframetrcs(io, idx)
-    _hdrs = getframehdrs(io,idx)
+    _trcs = getframetrcs(io, true, idx)
+    _hdrs = getframehdrs(io, true, idx)
     copyto!(_trcs, 1, trcs, 1, size(io,2)*size(io,1))
     copyto!(_hdrs, 1, hdrs, 1, size(io,2)*io.hdrlength)
     fld
@@ -1405,7 +1491,7 @@ set of headers are created from `idx...` and are also written to `io`.
 """ 
 function TeaSeis.writeframe(io::CSeis, trcs::AbstractArray, idx::CartesianIndex)
     cache!(io, idx)
-    _trcs,hdrs = getframe(io, idx)
+    _trcs,hdrs = getframe(io, true, idx)
     prop_trctype = prop(io, stockprop[:TRC_TYPE])
     for i = 1:size(io,2)
         set!(prop_trctype, hdrs, i, tracetype[:live])
@@ -1441,7 +1527,7 @@ function readtrcs_impl!(io::CSeis, trcs::AbstractArray, smprng::AbstractRange{In
     n = ntuple(i->length(rng[i]), N)::NTuple{N,Int}
     for idx_n in CartesianIndices(n)
         idx = logicalframeidx(io, parseindex(rng, idx_n))
-        frmtrcs = getframetrcs(io, idx)
+        frmtrcs = getframetrcs(io, true, idx)
         for (itrc,trc) in enumerate(trcrng), (ismp,smp) in enumerate(smprng)
             trcs[ismp,itrc,idx_n] = frmtrcs[smp,trc]
         end
@@ -1494,7 +1580,7 @@ function readhdrs_impl!(io::CSeis, hdrs::AbstractArray, trcrng::AbstractRange{In
     n = ntuple(i->length(rng[i]), N)::NTuple{N,Int}
     for idx_n in CartesianIndices(n)
         idx = logicalframeidx(io, parseindex(rng, idx_n))
-        frmhdrs = getframehdrs(io, idx)
+        frmhdrs = getframehdrs(io, true, idx)
         for (itrc,trc) in enumerate(trcrng), ismp in 1:headerlength(io)
             hdrs[ismp,itrc,idx_n] = frmhdrs[ismp,trc]
         end
@@ -1585,7 +1671,7 @@ function write_helper(io::CSeis, trcs, frmtrcs, smprng, trcrng, nrng, _rng::NTup
     for idx_n in CartesianIndices(n)
         idx = logicalframeidx(io, parseindex(_rng, idx_n))
 
-        frmtrcs = getframetrcs(io, idx)
+        frmtrcs = getframetrcs(io, true, idx)
         for (itrc,trc) in enumerate(trcrng), (ismp,smp) in enumerate(smprng)
             frmtrcs[smp,trc] = trcs[ismp,itrc,idx_n]
         end
