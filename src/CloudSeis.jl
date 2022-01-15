@@ -1434,7 +1434,7 @@ left justified.  Note that one can subsequently use the `regularize!` method.
 TeaSeis.readframehdrs(io::CSeis, idx::CartesianIndex; regularize=true) = readframehdrs!(io, allocframehdrs(io), idx; regularize)
 
 TeaSeis.readframehdrs!(io::CSeis, hdrs::AbstractArray{UInt8,2}, idx...; regularize=true) = readframehdrs!(io, hdrs, CartesianIndex(idx); regularize)
-TeaSeis.readframehdrs(io::CSeis, idx...) = readframehdrs(io, CartesianIndex(idx); regularize)
+TeaSeis.readframehdrs(io::CSeis, idx...; regularize=true) = readframehdrs(io, CartesianIndex(idx); regularize)
 
 """
     readframe!(io::CSeis, trcs, hdrs, idx...; regularize=true)
