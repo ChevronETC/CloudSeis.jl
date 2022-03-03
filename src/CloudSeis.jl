@@ -193,6 +193,68 @@ end
 Base.copy(c::ZfpCompressor) = ZfpCompressor(c.tol, c.precision, c.rate)
 hdrlength_multipleof(_::ZfpCompressor) = 4
 
+struct ZfpCompressor{T,P,R} <: AbstractCompressor
+    tol::T
+    precision::P
+    rate::R
+end
+function ZfpCompressor(;kwargs...)
+    if length(kwargs) == 0
+        return ZfpCompressor(nothing, nothing, nothing)
+    end
+
+    length(kwargs) == 1 || error("zfp options are at most one of ':tol', ':precision', and ':rate'")
+    key,value = keys(kwargs)[1],values(kwargs)[1]
+
+    if key == :tol
+        return ZfpCompressor(value, nothing, nothing)
+    elseif key == :precision
+        return ZfpCompressor(nothing, value, nothing)
+    elseif key == :rate
+        return ZfpCompressor(nothing, nothing, value)
+    else
+        error("zfp options are at most one of ':tol', ':precision', and ':rate'")
+    end
+end
+
+kwargs(compressor::ZfpCompressor{<:Real,Nothing,Nothing}) = (tol=compressor.tol,)
+kwargs(compressor::ZfpCompressor{Nothing,<:Real,Nothing}) = (precision=compressor.precision,)
+kwargs(compressor::ZfpCompressor{Nothing,Nothing,<:Real}) = (rate=compressor.rate,)
+kwargs(_::ZfpCompressor{Nothing,Nothing,Nothing}) = ()
+
+function ZfpCompressor(d::Dict)
+    if haskey(d["library_options"], "tol")
+        return ZfpCompressor(Float64(d["library_options"]["tol"]), nothing, nothing)
+    elseif haskey(d["library_options"], "precision")
+        return ZfpCompressor(nothing, Int32(d["library_options"]["precision"]), nothing)
+    elseif haskey(d["library_options"], "rate")
+        return ZfpCompressor(nothing, nothing, Int(d["library_options"]["rate"]))
+    else
+        return ZfpCompressor(nothing, nothing, nothing)
+    end
+end
+
+function Dict(c::ZfpCompressor)
+    local library_options
+    if c.tol !== nothing
+        library_options = Dict("tol" => c.tol)
+    elseif c.precision !== nothing
+        library_options = Dict("precision" => c.precision)
+    elseif c.rate !== nothing
+        library_options = Dict("rate" => c.rate)
+    else
+        library_options = Dict()
+    end
+
+    Dict(
+        "method" => "zfp",
+        "library" => "ZfpCompression.jl",
+        "library_version" => string(pkgversion(UUID("43441a71-1662-41c6-b8ea-40ed1525242b"))), # this UUID is specific to ZfpCompression.jl
+        "library_options" => library_options
+    )
+end
+Base.copy(c::ZfpCompressor) = ZfpCompressor(c.tol, c.precision, c.rate)
+
 struct LeftJustifyCompressor <: AbstractCompressor end
 LeftJustifyCompressor(d::Dict) = LeftJustifyCompressor()
 Dict(c::LeftJustifyCompressor) = Dict("method" => "leftjustify")
@@ -818,10 +880,17 @@ propertyformatstring(T::Type{Vector{UInt8}}) = "BYTESTRING"
 propertyformatstring(def::TracePropertyDef) = propertyformatstring(def.format)
 propertyformatstring(prop::TraceProperty) = propertyformatstring(prop.def)
 
-function cachesize(io::CSeis, extentindex)
+function _cachesize(io::CSeis, extentindex)
     nframes = length(io.extents[extentindex].frameindices)
     nframes*(sizeof(Int) + (io.hdrlength + sizeof(io.traceformat)*size(io,1))*size(io,2))
 end
+
+function cachesize(io::CSeis{T,N,<:ZfpCompressor}, extentindex) where {T,N}
+    n,r = divrem(_cachesize(io, extentindex), 4)
+    4*(n + (r == 0 ? 0 : 1)) # zfp library does not allow compression from UInt8 array
+end
+
+cachesize(io, extentindex) = _cachesize(io, extentindex)
 
 function cachesize_foldmap(io::CSeis, extentindex)
     nframes = length(io.extents[extentindex].frameindices)
