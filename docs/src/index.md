@@ -84,7 +84,7 @@ this case the extents are distributed across all containers, and the meta-inform
 is in the first container in the list.  This is, typically, used to manually shard data
 across multiple Azure storage accounts in order to improve through-put.  For example:
 ```julia
-containers = [AzContainer("filename-cs" storageaccount="mystorageaccount$i") for i = 1:10]
+containers = [AzContainer("filename-cs"; storageaccount="mystorageaccount$i") for i = 1:10]
 io = csopen(containers, "w", axis_lengths=[10,11,2])
 ```
 Note that when opening a data-set that is sharded accross multiple containers in "r" or "r+"
@@ -109,7 +109,7 @@ with the CloudSeis data context.
 trcs, hdrs = readframe(io, ifrm) # read from 3D data
 trcs, hdrs = readframe(io, ifrm, ivol) # read from 4D data
 trcs, hdrs = readframe(io, ifrm, ivol, ihyp) # read from 5D data
-trcs, hdrs = readframe(io, ifrm ivol, ihyp, i6) # read from 6D data
+trcs, hdrs = readframe(io, ifrm, ivol, ihyp, i6) # read from 6D data
 ...
 ```
 
