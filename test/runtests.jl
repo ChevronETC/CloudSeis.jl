@@ -40,12 +40,14 @@ function csopen_robust(containers, mode; kwargs...)
 end
 
 const clouds = (Azure, Azure2, POSIX)
-const compressors = ("none","blosc","leftjustify")
+const compressors = ("none","blosc","leftjustify","zfp")
 
 @testset "CloudSeis, cloud=$cloud, compresser=$compressor" for cloud in clouds, compressor in compressors
+    compressor_options = () # lossless compression for zfp unit-tests
+
     @testset "CloudSeis, compression selection" begin
         r = uuid4()
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], compressor=compressor)
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], compressor=compressor, compressor_options=compressor_options)
         if compressor == "none"
             @test isa(io.cache.compressor, CloudSeis.NotACompressor)
             @test Dict(io.cache.compressor)["method"] == "none"
@@ -60,6 +62,10 @@ const compressors = ("none","blosc","leftjustify")
             @test isa(io.cache.compressor, CloudSeis.BloscCompressor)
             @test Dict(io.cache.compressor)["method"] == "blosc"
         end
+        if compressor == "zfp"
+            @test isa(io.cache.compressor, CloudSeis.ZfpCompressor)
+            @test Dict(io.cache.compressor)["method"] == "zfp"
+        end
         if compressor == "leftjustify"
             @test isa(io.cache.compressor, CloudSeis.LeftJustifyCompressor)
             @test Dict(io.cache.compressor)["method"] == "leftjustify"
@@ -69,7 +75,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "allocframe" begin
         r = uuid4()
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], compressor=compressor)
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], compressor=compressor, compressor_options=compressor_options)
         t,h = allocframe(io)
 
         @test size(t) == (10,11)
@@ -84,7 +90,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "writeframe/readframe with headers and variable fold" begin
         r = uuid4()
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], compressor=compressor)
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], compressor=compressor, compressor_options=compressor_options)
 
         x = rand(Float32,10,11,12)
         t,h = allocframe(io)
@@ -121,6 +127,8 @@ const compressors = ("none","blosc","leftjustify")
             @test nbytes == size(io,3)*8 + size(io,3)*size(io,2)*(4*size(io,1) + headerlength(io))
         elseif compressor == "blosc"
             @test nbytes < size(io,3)*8 + size(io,3)*size(io,2)*(4*size(io,1) + headerlength(io))
+        elseif compressor == "zfp"
+            @test nbytes < size(io,3)*8 + size(io,3)*size(io,2)*(4*size(io,1) + headerlength(io))
         end
 
         io = csopen(mkcontainer(cloud, "test-$r-cs"))
@@ -140,7 +148,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "writeframe/readframe with index" begin
         r = uuid4()
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], dataproperties=[DataProperty("P",1)], compressor=compressor)
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], dataproperties=[DataProperty("P",1)], compressor=compressor, compressor_options=compressor_options)
 
         x = rand(Float32,10,11)
 
@@ -159,7 +167,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "write, lstarts=$lstarts, lincs=$lincs" for (lstarts,lincs) = (((1,1,1),(1,1,1)), ((2,3,4),(5,6,7)))
         r = uuid4()
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_lstarts=lstarts, axis_lincs=lincs, compressor=compressor)
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_lstarts=lstarts, axis_lincs=lincs, compressor=compressor, compressor_options=compressor_options)
 
         x = rand(Float32,10,11,12)
         for ifrm = 1:12
@@ -179,7 +187,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "write, multiple extents" begin
         r = uuid4()
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], frames_per_extent=1, compressor=compressor)
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], frames_per_extent=1, compressor=compressor, compressor_options=compressor_options)
 
         x = rand(Float32,10,11,12)
         write(io, x, :, :, :)
@@ -196,7 +204,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "readtrcs, lstarts=$lstarts, lincs=$lincs" for (lstarts,lincs) = (((1,1,1),(1,1,1)), ((2,3,4),(5,6,7)))
         r = uuid4()
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_lstarts=lstarts, axis_lincs=lincs, compressor=compressor)
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_lstarts=lstarts, axis_lincs=lincs, compressor=compressor, compressor_options=compressor_options)
 
         x = rand(Float32,10,11,12)
         write(io, x, :, :, :)
@@ -212,7 +220,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "readhdrs, lstarts=$lstarts, lincs=$lincs" for (lstarts,lincs) = (((1,1,1),(1,1,1)), ((2,3,4),(5,6,7)))
         r = uuid4()
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_lincs=lincs, axis_lstarts=lstarts, compressor=compressor)
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_lincs=lincs, axis_lstarts=lstarts, compressor=compressor, compressor_options=compressor_options)
 
         x = rand(Float32,10,11,12)
         write(io, x, :, :, :)
@@ -231,7 +239,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "readhdrs!, lstarts=$lstarts, lincs=$lincs" for (lstarts,lincs) = (((1,1,1),(1,1,1)), ((2,3,4),(5,6,7)))
         r = uuid4()
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_lincs=lincs, axis_lstarts=lstarts, compressor=compressor)
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_lincs=lincs, axis_lstarts=lstarts, compressor=compressor, compressor_options=compressor_options)
 
         x = rand(Float32,10,11,12)
         write(io, x, :, :, :)
@@ -250,7 +258,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "partial read for foldmap, lstarts=$lstarts, lincs=$lincs" for (lstrts,lncs) = (((1,1,1),(1,1,1)), ((2,3,4),(5,6,7)))
         r = uuid4()
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_lstarts=lstrts, axis_lincs=lncs, compressor=compressor)
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_lstarts=lstrts, axis_lincs=lncs, compressor=compressor, compressor_options=compressor_options)
 
         x = rand(Float32,10,11,12)
         write(io, x, :, :, :)
@@ -270,7 +278,8 @@ const compressors = ("none","blosc","leftjustify")
             axis_pincs=[0.1,0.2,0.3],
             axis_lengths=[10,11,12],
             dataproperties=[DataProperty("P",1)],
-            compressor=compressor)
+            compressor=compressor,
+            compressor_options=compressor_options)
         close(io)
 
         _io = csopen_robust(mkcontainer(cloud, "test-$r-sim-cs"), "w", similarto=mkcontainer(cloud, "test-$r-cs"))
@@ -289,7 +298,8 @@ const compressors = ("none","blosc","leftjustify")
             axis_pincs=[0.1,0.2,0.3],
             axis_lengths=[10,11,12],
             dataproperties=[DataProperty("P",1)],
-            compressor=compressor)
+            compressor=compressor,
+            compressor_options=compressor_options)
         @test length(io.extents) == 1
         close(io)
 
@@ -304,7 +314,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "propdefs" begin
         r = uuid4()
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], compressor=compressor)
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], compressor=compressor, compressor_options=compressor_options)
         @test propdefs(io,1).label == "SAMPLE"
         @test propdefs(io,2).label == "TRACE"
         @test propdefs(io,3).label == "FRAME"
@@ -317,7 +327,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "props" begin
         r = uuid4()
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], compressor=compressor)
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], compressor=compressor, compressor_options=compressor_options)
         @test props(io,1).def.label == "SAMPLE"
         @test props(io,2).def.label == "TRACE"
         @test props(io,3).def.label == "FRAME"
@@ -331,7 +341,7 @@ const compressors = ("none","blosc","leftjustify")
     @testset "vector props" begin
         r = uuid4()
         pdef = TracePropertyDef("X","XX",Vector{Float64},2)
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], tracepropertydefs=[pdef], compressor=compressor)
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], tracepropertydefs=[pdef], compressor=compressor, compressor_options=compressor_options)
         t,h = allocframe(io)
         for i = 1:11
             set!(prop(io,"TRACE"), h, i, i)
@@ -355,7 +365,7 @@ const compressors = ("none","blosc","leftjustify")
     @testset "string props" begin
         r = uuid4()
         pdef = TracePropertyDef("X","XX",Vector{UInt8},32)
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], tracepropertydefs=[pdef], compressor=compressor)
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], tracepropertydefs=[pdef], compressor=compressor, compressor_options=compressor_options)
         t,h = allocframe(io)
         for i = 1:11
             set!(prop(io,"TRACE"), h, i, i)
@@ -378,7 +388,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "pincs" begin
         r = uuid4()
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_pincs=[1.0,2.0,3.0], compressor=compressor)
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_pincs=[1.0,2.0,3.0], compressor=compressor, compressor_options=compressor_options)
         @test pincs(io,1) ≈ 1.0
         @test pincs(io,2) ≈ 2.0
         @test pincs(io,3) ≈ 3.0
@@ -391,7 +401,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "pstarts" begin
         r = uuid4()
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_pstarts=[1.0,2.0,3.0], compressor=compressor)
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_pstarts=[1.0,2.0,3.0], compressor=compressor, compressor_options=compressor_options)
         @test pstarts(io,1) ≈ 1.0
         @test pstarts(io,2) ≈ 2.0
         @test pstarts(io,3) ≈ 3.0
@@ -404,7 +414,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "lincs" begin
         r = uuid4()
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_lincs=[1,2,3], compressor=compressor)
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_lincs=[1,2,3], compressor=compressor, compressor_options=compressor_options)
         @test lincs(io,1) == 1
         @test lincs(io,2) == 2
         @test lincs(io,3) == 3
@@ -417,7 +427,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "lstarts" begin
         r = uuid4()
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_lstarts=[1,2,3], compressor=compressor)
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_lstarts=[1,2,3], compressor=compressor, compressor_options=compressor_options)
         @test lstarts(io,1) == 1
         @test lstarts(io,2) == 2
         @test lstarts(io,3) == 3
@@ -430,7 +440,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "units" begin
         r = uuid4()
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_units=["X","Y","Z"], compressor=compressor)
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_units=["X","Y","Z"], compressor=compressor, compressor_options=compressor_options)
         @test units(io,1) == "X"
         @test units(io,2) == "Y"
         @test units(io,3) == "Z"
@@ -443,7 +453,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "domains" begin
         r = uuid4()
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_domains=["X","Y","Z"], compressor=compressor)
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_domains=["X","Y","Z"], compressor=compressor, compressor_options=compressor_options)
         @test domains(io,1) == "X"
         @test domains(io,2) == "Y"
         @test domains(io,3) == "Z"
@@ -464,7 +474,7 @@ const compressors = ("none","blosc","leftjustify")
             v1=3,vn=4,
             w1=5,wn=6)
         r = uuid4()
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], geometry=g, compressor=compressor)
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], geometry=g, compressor=compressor, compressor_options=compressor_options)
 
         _g = geometry(io)
         @test g.ox ≈ 1.0
@@ -492,7 +502,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "in" begin
         r = uuid4()
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], compressor=compressor)
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], compressor=compressor, compressor_options=compressor_options)
 
         @test in(stockprop[:TRACE], io) == true
         @test in(stockprop[:CDP],io) == false
@@ -503,7 +513,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "dataproperty" begin
         r = uuid4()
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], dataproperties=[DataProperty("X",1)], compressor=compressor)
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], dataproperties=[DataProperty("X",1)], compressor=compressor, compressor_options=compressor_options)
 
         @test dataproperty(io, "X") == 1
 
@@ -513,7 +523,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "hasdataproperty" begin
         r = uuid4()
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], dataproperties=[DataProperty("X",1)], compressor=compressor)
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], dataproperties=[DataProperty("X",1)], compressor=compressor, compressor_options=compressor_options)
 
         @test hasdataproperty(io, "X") == true
         @test hasdataproperty(io, "Y") == false
@@ -527,7 +537,7 @@ const compressors = ("none","blosc","leftjustify")
         c = mkcontainer(cloud, "test-$r-cs")
         _c = isa(c, Array) ? c[1] : c
 
-        io = csopen_robust(c, "w", axis_lengths=[10,11,12], dataproperties=[DataProperty("X",1)], compressor=compressor)
+        io = csopen_robust(c, "w", axis_lengths=[10,11,12], dataproperties=[DataProperty("X",1)], compressor=compressor, compressor_options=compressor_options)
         d = JSON.parse(read(_c, "description.json", String))
         @test isa(d["dataproperties"], Dict)
         d["dataproperties"] = [Dict("label"=>"X", "value"=>1)]
@@ -545,9 +555,9 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "copy!" begin
         r1 = uuid4()
-        io1 = csopen_robust(mkcontainer(cloud, "test-$r1-cs"), "w", axis_lengths=[10,11,12], compressor=compressor)
+        io1 = csopen_robust(mkcontainer(cloud, "test-$r1-cs"), "w", axis_lengths=[10,11,12], compressor=compressor, compressor_options=compressor_options)
         r2 = uuid4()
-        io2 = csopen_robust(mkcontainer(cloud, "test-$r2-cs"), "w", axis_lengths=[10,11,12], compressor=compressor)
+        io2 = csopen_robust(mkcontainer(cloud, "test-$r2-cs"), "w", axis_lengths=[10,11,12], compressor=compressor, compressor_options=compressor_options)
 
         h1 = allocframehdrs(io1)
         h2 = allocframehdrs(io2)
@@ -574,7 +584,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "reduce" begin
         r = uuid4()
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,50], frames_per_extent=2, compressor=compressor)
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,50], frames_per_extent=2, compressor=compressor, compressor_options=compressor_options)
 
         @test length(io.extents) == 25
 
@@ -604,7 +614,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "reduce, parallel" begin
         r = uuid4()
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,50], frames_per_extent=2, compressor=compressor)
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,50], frames_per_extent=2, compressor=compressor, compressor_options=compressor_options)
 
         @test length(io.extents) == 25
 
@@ -637,7 +647,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "cp" begin
         r = uuid4()
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,50], frames_per_extent=10, compressor=compressor)
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,50], frames_per_extent=10, compressor=compressor, compressor_options=compressor_options)
         x = rand(Float32,10,11,50)
         write(io, x, :, :, :)
         close(io)
@@ -654,7 +664,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "cp, parallel" begin
         r = uuid4()
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,50], frames_per_extent=10, compressor=compressor)
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,50], frames_per_extent=10, compressor=compressor, compressor_options=compressor_options)
         x = rand(Float32,10,11,50)
         write(io, x, :, :, :)
         close(io)
@@ -676,21 +686,21 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "robust cscreate" begin
         r = uuid4()
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], force=true, compressor=compressor)
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], force=true, compressor=compressor, compressor_options=compressor_options)
         writeframe(io, rand(Float32,10,11), 1)
         close(io)
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], force=true, compressor=compressor)
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], force=true, compressor=compressor, compressor_options=compressor_options)
         writeframe(io, rand(Float32,10,11), 1)
         close(io)
     end
 
     @testset "backward compatibility (1.1->1.0)" begin
         r = uuid4()
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], force=true, compressor="none")
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], force=true, compressor="none", compressor_options=compressor_options)
         description = JSON.parse(read(io.containers[1], "description.json", String))
         delete!(description, "compressor")
         write(io.containers[1], "description.json", json(description))
-        io = csopen(mkcontainer(cloud, "test-$r-cs"), axis_lengths=[10,11,12], force=true, compressor="none")
+        io = csopen(mkcontainer(cloud, "test-$r-cs"), axis_lengths=[10,11,12], force=true, compressor="none", compressor_options=compressor_options)
         @test isa(io.cache, CloudSeis.Cache{CloudSeis.NotACompressor})
     end
 
@@ -793,7 +803,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "non unitary logical start and increments, read/write frame" begin
         r = uuid4()
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_lstarts=[0,2,6], axis_lincs=[1,2,3], compressor=compressor)
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_lstarts=[0,2,6], axis_lincs=[1,2,3], compressor=compressor, compressor_options=compressor_options)
 
         x = rand(Float32,10,11,12)
         t,h = allocframe(io)
@@ -849,7 +859,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "non unitary logical start and increments, writeframe/readframe with index" begin
         r = uuid4()
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_lstarts=[0,2,6], axis_lincs=[1,2,3], dataproperties=[DataProperty("P",1)], compressor=compressor)
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_lstarts=[0,2,6], axis_lincs=[1,2,3], dataproperties=[DataProperty("P",1)], compressor=compressor, compressor_options=compressor_options)
 
         x = rand(Float32,10,11)
 
@@ -868,7 +878,7 @@ const compressors = ("none","blosc","leftjustify")
 
     @testset "non unitary logical start and increments, exception for in-between out-of-bounds index" begin
         r = uuid4()
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_lstarts=[1,2,3], axis_lincs=[4,5,6], dataproperties=[DataProperty("P",1)], compressor=compressor)
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_lstarts=[1,2,3], axis_lincs=[4,5,6], dataproperties=[DataProperty("P",1)], compressor=compressor, compressor_options=compressor_options)
 
         @test_throws ErrorException CloudSeis.linearframeidx(io, 4)
         @test @inbounds CloudSeis.linearframeidx(io, 2) == 1
