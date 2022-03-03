@@ -29,7 +29,16 @@ function csopen_robust(containers, mode; kwargs...)
             break
         catch e
             @warn "caught exception in csopen, sleeping for 60 seconds"
-            showerror(stdout, e)
+            io = IOBuffer()
+            showerror(io, e)
+            write(io, "\n\terror type: $(typeof(e))")
+            for (exc, bt) in current_exceptions(current_task())
+                showerror(io, exc, bt)
+                println(io)
+            end
+            s = String(take!(io))
+            close(io)
+            @warn s
             sleep(60)
             if time() - tic > timeout
                 throw(e)
@@ -40,10 +49,15 @@ function csopen_robust(containers, mode; kwargs...)
 end
 
 const clouds = (Azure, Azure2, POSIX)
-const compressors = ("none","blosc","leftjustify","zfp")
+const compressors = ("none","blosc","leftjustify","zfp","cvx")
 
 @testset "CloudSeis, cloud=$cloud, compresser=$compressor" for cloud in clouds, compressor in compressors
+    if compressor == "cvx"
+        compressor_options = (bx=16,by=16,bz=16,scale=0.0f0) # accurate as possible for cvx unit tests
+    end
     compressor_options = () # lossless compression for zfp unit-tests
+
+    rtol = compressor == "cvx" ? 1e-2 : 1e-7
 
     @testset "CloudSeis, compression selection" begin
         r = uuid4()
@@ -65,6 +79,10 @@ const compressors = ("none","blosc","leftjustify","zfp")
         if compressor == "zfp"
             @test isa(io.cache.compressor, CloudSeis.ZfpCompressor)
             @test Dict(io.cache.compressor)["method"] == "zfp"
+        end
+        if compressor == "cvx"
+            @test isa(io.cache.compressor, CloudSeis.CloudSeisCvxCompressor)
+            @test Dict(io.cache.compressor)["method"] == "cvx"
         end
         if compressor == "leftjustify"
             @test isa(io.cache.compressor, CloudSeis.LeftJustifyCompressor)
@@ -136,7 +154,7 @@ const compressors = ("none","blosc","leftjustify","zfp")
             t,h = readframe(io, iframe)
             for i = 1:size(h,2)
                 if i ∈ J[iframe]
-                    @test t[:,i] ≈ x[:,i,iframe]
+                    @test t[:,i] ≈ x[:,i,iframe] rtol=rtol
                     @test get(prop(io,io.axis_propdefs[3]), h, i) == iframe
                 end
                 @test get(prop(io,io.axis_propdefs[2]), h, i) == i
@@ -161,7 +179,7 @@ const compressors = ("none","blosc","leftjustify","zfp")
         io = csopen(mkcontainer(cloud, "test-$r-cs"))
         t,h = readframe(io, 1)
         close(io)
-        @test t ≈ x
+        @test t ≈ x rtol=rtol
         rm(io)
     end
 
@@ -179,7 +197,7 @@ const compressors = ("none","blosc","leftjustify","zfp")
         io = csopen(mkcontainer(cloud, "test-$r-cs"))
         for ifrm = 1:12
             _x = readframetrcs(io, lstarts[3] + lincs[3]*(ifrm - 1))
-            @test _x ≈ x[:,:,ifrm]
+            @test _x ≈ x[:,:,ifrm] rtol=rtol
         end
         close(io)
         rm(io)
@@ -196,7 +214,7 @@ const compressors = ("none","blosc","leftjustify","zfp")
         io = csopen(mkcontainer(cloud, "test-$r-cs"))
         for ifrm = 1:12
             _x = readframetrcs(io, ifrm)
-            @test _x ≈ x[:,:,ifrm]
+            @test _x ≈ x[:,:,ifrm] rtol=rtol
         end
         close(io)
         rm(io)
@@ -215,7 +233,7 @@ const compressors = ("none","blosc","leftjustify","zfp")
         close(io)
         rm(io)
 
-        @test x ≈ _x
+        @test x ≈ _x rtol=rtol
     end
 
     @testset "readhdrs, lstarts=$lstarts, lincs=$lincs" for (lstarts,lincs) = (((1,1,1),(1,1,1)), ((2,3,4),(5,6,7)))
@@ -603,7 +621,7 @@ const compressors = ("none","blosc","leftjustify","zfp")
         io = csopen(mkcontainer(cloud, "test-$r-cs"))
         for i = 1:50
             t,h = readframe(io, i)
-            @test t ≈ T[:,:,i]
+            @test t ≈ T[:,:,i] rtol=rtol
             @test h == H[:,:,i]
         end
 
@@ -636,7 +654,7 @@ const compressors = ("none","blosc","leftjustify","zfp")
         io = csopen(mkcontainer(cloud, "test-$r-cs"))
         for i = 1:50
             t,h = readframe(io, i)
-            @test t ≈ T[:,:,i]
+            @test t ≈ T[:,:,i] rtol=rtol
             @test h == H[:,:,i]
         end
 
@@ -658,7 +676,7 @@ const compressors = ("none","blosc","leftjustify","zfp")
         rm(io)
 
         iocp = csopen(c)
-        @test readtrcs(iocp, :, :, :) ≈ x
+        @test readtrcs(iocp, :, :, :) ≈ x rtol=rtol
         rm(iocp)
     end
 
@@ -680,7 +698,7 @@ const compressors = ("none","blosc","leftjustify","zfp")
         rm(io)
 
         iocp = csopen(c)
-        @test readtrcs(iocp, :, :, :) ≈ x
+        @test readtrcs(iocp, :, :, :) ≈ x rtol=rtol
         rm(iocp)
     end
 
@@ -724,7 +742,7 @@ const compressors = ("none","blosc","leftjustify","zfp")
         io = csopen_robust(container, "r")
         io_similar = csopen_robust(container_similar, "r")
         _trcs1 = readframetrcs(io_similar, 1)
-        @test _trcs1 ≈ trcs1
+        @test _trcs1 ≈ trcs1 rtol=rtol
 
         rm(io)
         rm(io_similar)
@@ -840,6 +858,10 @@ const compressors = ("none","blosc","leftjustify","zfp")
             @test nbytes == size(io,3)*8 + size(io,3)*size(io,2)*(4*size(io,1) + headerlength(io))
         elseif compressor == "blosc"
             @test nbytes < size(io,3)*8 + size(io,3)*size(io,2)*(4*size(io,1) + headerlength(io))
+        elseif compressor == "zfp"
+            @test nbytes < size(io,3)*8 + size(io,3)*size(io,2)*(4*size(io,1) + headerlength(io))
+        elseif compressor == "cvx"
+            @test nbytes < size(io,3)*8 + size(io,3)*size(io,2)*(4*size(io,1) + headerlength(io))
         end
 
         io = csopen(mkcontainer(cloud, "test-$r-cs"))
@@ -847,7 +869,7 @@ const compressors = ("none","blosc","leftjustify","zfp")
             t,h = readframe(io, 6 + 3*(iframe-1))
             for i = 1:size(h,2)
                 if i ∈ J[iframe]
-                    @test t[:,i] ≈ x[:,i,iframe]
+                    @test t[:,i] ≈ x[:,i,iframe] rtol=rtol
                     @test get(prop(io,io.axis_propdefs[3]), h, i) == 6 + 3*(iframe-1)
                 end
                 @test get(prop(io,io.axis_propdefs[2]), h, i) == 2 + 2*(i - 1)
@@ -872,7 +894,7 @@ const compressors = ("none","blosc","leftjustify","zfp")
         io = csopen(mkcontainer(cloud, "test-$r-cs"))
         t,h = readframe(io, 9)
         close(io)
-        @test t ≈ x
+        @test t ≈ x rtol=rtol
         rm(io)
     end
 
@@ -973,7 +995,7 @@ const compressors = ("none","blosc","leftjustify","zfp")
     end
 end
 
-@testset "CloudSeis optimzed read, cloud=$cloud" for cloud in clouds
+@testset "CloudSeis optimized read, cloud=$cloud" for cloud in clouds
     r = uuid4()
     io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,12,3], force=true)
 
