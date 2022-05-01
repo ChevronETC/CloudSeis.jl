@@ -87,6 +87,8 @@ across multiple Azure storage accounts in order to improve through-put.  For exa
 containers = [AzContainer("filename-cs" storageaccount="mystorageaccount$i") for i = 1:10]
 io = csopen(containers, "w", axis_lengths=[10,11,2])
 ```
+Note that when opening a data-set that is sharded accross multiple containers in "r" or "r+"
+modes only the primary container that contains *description.json* needs to be provided.
 
 `csopen` and `cscreate` take a number of keyword arguments to control behavior.  Please
 see the **reference** section in this documentation for more information.
