@@ -98,6 +98,10 @@ end
 
 Base.length(extent::Extent) = length(extent.frameindices)
 
+Base.lock(extent::Extent) = touch(extent.container, extent.name*".lock")
+Base.islocked(extent::Extent) = isfile(extent.container, extent.name*".lock")
+Base.unlock(extent::Extent) = rm(extent.container, extent.name*".lock")
+
 const CACHE_NONE = 0
 const CACHE_FOLDMAP = 1
 const CACHE_ALL = 2
@@ -233,6 +237,7 @@ container.  The `axis_lengths` vector is of at-least length 3.
 * `axis_lstarts::Vector{Int}` Logical starts for each axis.  If not set, then `1` is used for the logical start for each axis.
 * `axis_lincs::Vector{Int}` Logical increments for each axis.  If not set, then `1` is used for the logical increment for each axis.
 * `compressor="none"` Compress the cache before writing to disk.  This is particularly useful for data with variable fold.  chooose from: ("none", "blosc", "leftjustify")
+* `unlock=false` Clear any existing lock files
 
 # Example
 ## Azure storage
@@ -253,6 +258,7 @@ function csopen(containers::Vector{<:Container}, mode;
         similarto = "",
         datatype = "",
         force = false,
+        unlock = false,
         traceformat = nothing,
         byteorder = "",
         extents = UnitRange[],
@@ -274,6 +280,7 @@ function csopen(containers::Vector{<:Container}, mode;
         similarto = similarto,
         datatype = datatype,
         force = force,
+        unlock = unlock,
         traceformat = traceformat,
         byteorder = byteorder,
         extents = extents,
@@ -293,7 +300,7 @@ function csopen(containers::Vector{<:Container}, mode;
         compressor = compressor)
     if mode == "r" || mode == "r+"
         _kwargs = process_kwargs(;kwargs...)
-        return csopen_read(containers, mode)
+        return csopen_read(containers, mode, unlock)
     elseif mode == "w" && similarto == ""
         return csopen_write(containers, mode; process_kwargs(;kwargs...)...)
     elseif mode == "w" && similarto != ""
@@ -320,11 +327,16 @@ in the "primary" container.
 """
 cscreate(containers::Union{Container,Vector{<:Container}}; kwargs...) = close(csopen(containers, "w"; kwargs...))
 
-function csopen_read(containers::Vector{<:Container}, mode)
+function csopen_read(containers::Vector{<:Container}, mode, unlock)
     description = JSON.parse(read(containers[1], "description.json", String))
 
     traceproperties = get_trace_properties(description)
-    csopen_from_description(containers, mode, description, traceproperties)
+    io = csopen_from_description(containers, mode, description, traceproperties)
+
+    if unlock
+        unlock.(io.extents)
+    end
+    io
 end
 
 function make_extents(containers::Vector{C}, nextents, foldername, nominal_frames_per_extent, remaining_frames) where {C<:Container}
@@ -436,6 +448,7 @@ function process_kwargs(;kwargs...)
         similarto = kwargs[:similarto],
         datatype = kwargs[:datatype] == "" ? "custom" : kwargs[:datatype],
         force = kwargs[:force],
+        unlock = kwargs[:unlock],
         traceformat = kwargs[:traceformat] == nothing ? Float32 : kwargs[:traceformat],
         byteorder = kwargs[:byteorder] == "" ? "LITTLE_ENDIAN" : kwargs[:byteorder],
         extents = kwargs[:extents],
@@ -490,6 +503,7 @@ function process_kwargs_similarto(;kwargs...)
         similarto = kwargs[:similarto],
         datatype = kwargs[:datatype] == "" ? io.datatype : kwargs[:datatype],
         force = kwargs[:force],
+        unlock = kwargs[:unlock],
         traceformat = kwargs[:traceformat] == nothing ? io.traceformat : kwargs[:traceformat],
         byteorder = kwargs[:byteorder] == "" ? io.byteorder : kwargs[:byteorder],
         extents = extents,
@@ -562,6 +576,22 @@ function robust_rm(containers::Vector{<:Container})
             rm(container)
         end
     end
+end
+
+"""
+    unlock(io::CSeis)
+
+Remove lock fils for a CloudSeis data-set extents.  If a process exited,
+then extents may be locked.  Use this method to remove all extent locks
+from a CloudSeis data-set.
+"""
+Base.unlock(io::CSeis) = unlock.(io.extents)
+
+function Base.wait(extent::Extent)
+    tsk = @async while islocked(extent)
+        sleep(1)
+    end
+    wait(tsk)
 end
 
 function Base.show(io::IO, cs::CSeis)
@@ -809,7 +839,14 @@ function cache!(io::CSeis, extentindex::Integer, regularize=true, force=false)
         return extentindex
     end
 
+    if islocked(io.extents[extentindex]) && (io.mode == "w" || io.mode == "r+") && !force
+        @info "waiting for extent $extentindex to unlock..."
+        wait(io.extents[extentindex])
+        @info "...done waiting for extent $extentindex to unlock."
+    end
+
     if io.mode == "w" || io.mode == "r+"
+        lock(io.extents[extentindex])
         flush(io)
     end
 
@@ -874,7 +911,7 @@ function cache_foldmap!(io::CSeis, idx::CartesianIndex, force=false)
     cache_foldmap!(io, extentindex, force)
 end
 
-function Base.flush(io::CSeis{T,N,NotACompressor}) where {T,N}
+function flush_to_file(io::CSeis{T,N,NotACompressor}) where {T,N}
     if io.cache.extentindex == 0
         return nothing
     end
@@ -886,7 +923,7 @@ function Base.flush(io::CSeis{T,N,NotACompressor}) where {T,N}
     nothing
 end
 
-function Base.flush(io::CSeis{T,N,BloscCompressor}) where {T,N}
+function flush_to_file(io::CSeis{T,N,BloscCompressor}) where {T,N}
     if io.cache.extentindex == 0
         return nothing
     end
@@ -936,7 +973,7 @@ function Base.flush(io::CSeis{T,N,BloscCompressor}) where {T,N}
     nothing
 end
 
-function Base.flush(io::CSeis{T,N,LeftJustifyCompressor}) where {T,N}
+function flush_to_file(io::CSeis{T,N,LeftJustifyCompressor}) where {T,N}
     if io.cache.extentindex == 0
         return nothing
     end
@@ -968,6 +1005,14 @@ function Base.flush(io::CSeis{T,N,LeftJustifyCompressor}) where {T,N}
     mbps_compress = mb/t_compress
     mbps = mb/(t_write+t_compress)
     @debug "...data compressed and wrote (effective: $mbps MB/s ; compression: $mbps_compress MB/s ; write: $mbps_write MB/s -- $mb MB; $mb_compressed compressed MB)"
+    nothing
+end
+
+function Base.flush(io::CSeis)
+    flush_to_file(io)
+    if io.cache.extentindex != 0
+        unlock(io.extents[io.cache.extentindex])
+    end
     nothing
 end
 

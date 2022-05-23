@@ -41,7 +41,8 @@ function csopen_robust(containers, mode; kwargs...)
     io
 end
 
-const clouds = (Azure, Azure2, POSIX)
+# const clouds = (Azure, Azure2, POSIX)
+const clouds = (Azure,)
 const compressors = ("none","blosc","leftjustify")
 
 @testset "CloudSeis, cloud=$cloud, compresser=$compressor" for cloud in clouds, compressor in compressors
@@ -1023,6 +1024,40 @@ end
             @test get(prop(io, stockprop[:TRC_TYPE]), _h, itrace) == tracetype[:dead]
         end
     end
+
+    rm(io)
+end
+
+@testset "CloudSeis, parallel write to the same extent, cloud=$cloud" for cloud in clouds
+    r = lowercase(randstring(MersenneTwister(millisecond(now())+47),4))
+    container = mkcontainer(cloud, "test-$r-cs")
+    io = cscreate(container, axis_lengths=[10,12,2], frames_per_extent=2)
+
+    addprocs(2)
+    @everywhere using AzSessions, AzStorage, CloudSeis, Dates, Distributed, FolderStorage, HTTP, JSON, Random, Test
+
+    @everywhere function foo(container, iframe)
+        io = csopen(container, "r+")
+        t = allocframetrcs(io)
+        t .= iframe
+        writeframe(io, t, iframe)
+        sleep(10)
+        close(io)
+    end
+
+    tsk1 = remotecall(foo, workers()[1], container, 1)
+    sleep(1)
+    tsk2 = remotecall(foo, workers()[2], container, 2)
+
+    wait(tsk1)
+    wait(tsk2)
+
+    rmprocs(workers())
+
+    io = csopen(container)
+
+    @test readframetrcs(io, 1) ≈ ones(Float32, 10, 12)
+    @test readframetrcs(io, 2) ≈ 2*ones(Float32, 10, 12)
 
     rm(io)
 end
