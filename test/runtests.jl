@@ -1026,3 +1026,50 @@ end
 
     rm(io)
 end
+
+@testset "fold from foldmap" begin
+    sleep(1)
+    r = lowercase(randstring(MersenneTwister(millisecond(now())+47),4))
+    io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,12,1], force=true)
+
+    h = allocframehdrs(io)
+    for itrace = 1:12
+        set!(prop(io, stockprop[:TRACE]), h, itrace, itrace)
+        set!(prop(io, stockprop[:FRAME]), h, itrace, 1)
+        if rem(itrace,2) == 0
+            set!(prop(io, stockprop[:TRC_TYPE]), h, itrace, tracetype[:live])
+        else
+            set!(prop(io, stockprop[:TRC_TYPE]), h, itrace, tracetype[:dead])
+        end
+    end
+
+    @test fold(io, 1) == 6
+    @test fold(io, 1; usemap=true) == 6
+end
+
+@testset "left justify" begin
+    sleep(1)
+    r = lowercase(randstring(MersenneTwister(millisecond(now())+48),4))
+    io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,12,1], force=true)
+
+    t,h = allocframe(io)
+    j = 0
+    for itrace = 1:12
+        set!(prop(io, stockprop[:TRACE]), h, itrace, itrace)
+        set!(prop(io, stockprop[:FRAME]), h, itrace, 1)
+        if rem(itrace,2) == 0
+            set!(prop(io, stockprop[:TRC_TYPE]), h, itrace, tracetype[:live])
+            j += 1
+            t[:,itrace] .= j
+        else
+            set!(prop(io, stockprop[:TRC_TYPE]), h, itrace, tracetype[:dead])
+        end
+    end
+
+    leftjustify!(io, t, h)
+    for i = 1:6
+        @test t[:,i] ≈ i*ones(Float32, 10)
+    end
+
+    rm(io)
+end

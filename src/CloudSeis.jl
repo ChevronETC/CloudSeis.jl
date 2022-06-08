@@ -1009,14 +1009,40 @@ function TeaSeis.fold(io::CSeis, idx::CartesianIndex)
 end
 TeaSeis.fold(io::CSeis, idx...) = fold(io, CartesianIndex(idx))
 
-function TeaSeis.fold(io::CSeis, hdrs::AbstractArray{UInt8,2})
+function _fold_from_idx(io::CSeis, hdrs::AbstractArray{UInt8,2}, _props::NTuple{N}) where {N}
+    proptype = prop(io, stockprop[:TRC_TYPE])
     fld = 0
+    for itrace in 1:size(io, 2)
+        if get(proptype, hdrs, itrace) == tracetype[:live]
+            idx = CartesianIndex(ntuple(i->get(_props[i], hdrs, itrace), N))
+            fld = fold(io, idx)
+            break
+        end
+    end
+    fld
+end
+
+function fold_from_idx(io::CSeis{T,N}, hdrs::AbstractArray{UInt8,2}) where {T,N}
+    _props = ntuple(i->props(io, 2+i), N-2)
+    _fold_from_idx(io, hdrs, _props)
+end
+
+function fold_from_hdrs(io::CSeis, hdrs::AbstractArray{UInt8,2})
+    fld = 0
+    proptype = prop(io, stockprop[:TRC_TYPE])
     for i = 1:size(hdrs,2)
-        if get(prop(io,stockprop[:TRC_TYPE]), hdrs, i) == tracetype[:live]
+        if get(proptype, hdrs, i) == tracetype[:live]
             fld += 1
         end
     end
     fld
+end
+
+function TeaSeis.fold(io::CSeis, hdrs::AbstractArray{UInt8,2}; usemap=false)
+    if usemap
+        return fold_from_idx(io, hdrs)
+    end
+    return fold_from_hdrs(io, hdrs)
 end
 
 function fold!(io::CSeis, fld, idx::CartesianIndex)
@@ -1066,15 +1092,15 @@ This is primarily used for compression, but one can also use this as a convenien
 to move all live traces to the beginning of its frame.
 """
 function TeaSeis.leftjustify!(io::CSeis, trcs::AbstractArray{Float32, 2}, hdrs::AbstractArray{UInt8, 2})
-    if fold(io, hdrs) == io.axis_lengths[2]
+    fld = fold(io, hdrs; usemap=true)
+    if fld == io.axis_lengths[2]
         return
     end
     proptyp = prop(io, "TRC_TYPE", Int32)
-    j,ntrcs,nsamp,nhead = 1,size(trcs, 2),size(trcs,1),size(hdrs,1)
-    for i = 1:ntrcs
+    j,jₒ,ntrcs,nsamp,nhead = 1,2,size(trcs,2),size(trcs,1),size(hdrs,1)
+    for i = 1:fld
         if get(proptyp, hdrs, i) != tracetype[:live]
-            j = i+1
-            while j <= ntrcs
+            for j = jₒ:ntrcs
                 if get(proptyp, hdrs, j) == tracetype[:live]
                     for k = 1:nsamp
                         tmp = trcs[k,i]
@@ -1087,11 +1113,10 @@ function TeaSeis.leftjustify!(io::CSeis, trcs::AbstractArray{Float32, 2}, hdrs::
                         hdrs[k,i] = hdrs[k,j]
                         hdrs[k,j] = tmp
                     end
+                    jₒ = j + 1
                     break
                 end
-                j += 1
             end
-            j >= ntrcs && break
         end
     end
 end
@@ -1102,26 +1127,25 @@ end
 Convenience method to move all live traces to the beginning of its frame.
 """
 function TeaSeis.leftjustify!(io::CSeis, hdrs::AbstractArray{UInt8, 2})
-    if fold(io, hdrs) == io.axis_lengths[2]
+    fld = fold(io, hdrs)
+    if fld == io.axis_lengths[2]
         return
     end
     proptyp = prop(io, "TRC_TYPE", Int32)
-    j,ntrcs,nhead = 1,size(hdrs, 2),size(hdrs,1)
-    for i = 1:ntrcs
+    j,jₒ,ntrcs,nhead = 1,2,size(hdrs, 2),size(hdrs,1)
+    for i = 1:fld
         if get(proptyp, hdrs, i) != tracetype[:live]
-            j = i+1
-            while j <= ntrcs
+            for j = jₒ:ntrcs
                 if get(proptyp, hdrs, j) == tracetype[:live]
                     for k = 1:nhead
                         tmp = hdrs[k,i]
                         hdrs[k,i] = hdrs[k,j]
                         hdrs[k,j] = tmp
                     end
+                    jₒ = j + 1
                     break
                 end
-                j += 1
             end
-            j >= ntrcs && break
         end
     end
 end
