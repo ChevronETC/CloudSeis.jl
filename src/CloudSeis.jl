@@ -1215,7 +1215,15 @@ function linearframeidx(io, idx, idim)
     div(idx[idim] - io.axis_lstarts[2+idim], io.axis_lincs[2+idim]) + 1
 end
 
-linearframeidx(io, idx::NTuple{N,Int}) where {N} = LinearIndices(io)[CartesianIndex(ntuple(idim->linearframeidx(io, idx, idim), N))]
+
+function linearframeidx(io, idx::NTuple{N,Int}) where {N}
+    @info "CloudSeis, size(io)=$(size(io))"
+    @info "CloudSeis, idx=$idx"
+    @info "N=$N"
+    LinearIndices(io)[CartesianIndex(ntuple(idim->linearframeidx(io, idx, idim), N))]
+end
+
+
 linearframeidx(io, idx::CartesianIndex) = linearframeidx(io, idx.I)
 linearframeidx(io, idx::Int...) = linearframeidx(io, idx)
 
