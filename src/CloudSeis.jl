@@ -1117,6 +1117,8 @@ function TeaSeis.leftjustify!(io::CSeis, trcs::AbstractArray{Float32, 2}, hdrs::
                     break
                 end
             end
+        else
+            jₒ = i + 1
         end
     end
 end
@@ -1146,6 +1148,8 @@ function TeaSeis.leftjustify!(io::CSeis, hdrs::AbstractArray{UInt8, 2})
                     break
                 end
             end
+        else
+            jₒ = i + 1
         end
     end
 end
