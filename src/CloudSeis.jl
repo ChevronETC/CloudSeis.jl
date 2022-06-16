@@ -944,7 +944,9 @@ function Base.flush(io::CSeis{T,N,LeftJustifyCompressor}) where {T,N}
     @debug "compressing and writing extent $(io.cache.extentindex)..."
     t_compress = @elapsed begin
         for iframe in io.extents[io.cache.extentindex].frameindices
-            leftjustify!(io, getframetrcs(io, true, io.cache.extentindex, iframe), getframehdrs(io, true, io.cache.extentindex, iframe))
+            fmap = foldmap(io)
+            fld = fmap[iframe - io.extents[io.cache.extentindex].frameindices[1] + 1]
+            leftjustify!(io, getframetrcs(io, true, io.cache.extentindex, iframe), getframehdrs(io, true, io.cache.extentindex, iframe), fld)
         end
 
         compressed_trc_offsets,compressed_hdr_offsets,fmap,nframes,_headerlength = compressed_offsets(io, io.cache.extentindex)
@@ -1011,8 +1013,9 @@ TeaSeis.fold(io::CSeis, idx...) = fold(io, CartesianIndex(idx))
 
 function TeaSeis.fold(io::CSeis, hdrs::AbstractArray{UInt8,2})
     fld = 0
+    proptype = prop(io, stockprop[:TRC_TYPE])
     for i = 1:size(hdrs,2)
-        if get(prop(io,stockprop[:TRC_TYPE]), hdrs, i) == tracetype[:live]
+        if get(proptype, hdrs, i) == tracetype[:live]
             fld += 1
         end
     end
@@ -1065,66 +1068,66 @@ TeaSeis.regularize!(io::CSeis, trcs::AbstractArray{Float32, 2}, hdrs::AbstractAr
 This is primarily used for compression, but one can also use this as a convenience method
 to move all live traces to the beginning of its frame.
 """
-function TeaSeis.leftjustify!(io::CSeis, trcs::AbstractArray{Float32, 2}, hdrs::AbstractArray{UInt8, 2})
-    if fold(io, hdrs) == io.axis_lengths[2]
+function TeaSeis.leftjustify!(io::CSeis, trcs::AbstractArray{Float32, 2}, hdrs::AbstractArray{UInt8, 2}, fld::Integer)
+    if fld == io.axis_lengths[2]
         return
     end
     proptyp = prop(io, "TRC_TYPE", Int32)
-    j,ntrcs,nsamp,nhead = 1,size(trcs, 2),size(trcs,1),size(hdrs,1)
-    for i = 1:ntrcs
+    j,jₒ,ntrcs,nsamp,nhead = 1,2,size(trcs,2),size(trcs,1),size(hdrs,1)
+    for i = 1:fld
         if get(proptyp, hdrs, i) != tracetype[:live]
-            j = i+1
-            while j <= ntrcs
+            jₒ = max(jₒ, i + 1)
+            for j = jₒ:ntrcs
                 if get(proptyp, hdrs, j) == tracetype[:live]
-                    for k = 1:nsamp
+                    @inbounds for k = 1:nsamp
                         tmp = trcs[k,i]
                         trcs[k,i] = trcs[k,j]
                         trcs[k,j] = tmp
                     end
 
-                    for k = 1:nhead
+                    @inbounds for k = 1:nhead
                         tmp = hdrs[k,i]
                         hdrs[k,i] = hdrs[k,j]
                         hdrs[k,j] = tmp
                     end
+                    jₒ = j + 1
                     break
                 end
-                j += 1
             end
-            j >= ntrcs && break
         end
     end
 end
+TeaSeis.leftjustify!(io::CSeis, trcs::AbstractArray{Float32, 2}, hdrs::AbstractArray{UInt8, 2}) = leftjustify!(io, trcs, hdrs, fold(io, hdrs))
 
 """
     leftjustify!(io::CSeis, hdrs)
 
 Convenience method to move all live traces to the beginning of its frame.
 """
-function TeaSeis.leftjustify!(io::CSeis, hdrs::AbstractArray{UInt8, 2})
-    if fold(io, hdrs) == io.axis_lengths[2]
+function TeaSeis.leftjustify!(io::CSeis, hdrs::AbstractArray{UInt8, 2}, fld::Integer)
+    if fld == io.axis_lengths[2]
         return
     end
     proptyp = prop(io, "TRC_TYPE", Int32)
-    j,ntrcs,nhead = 1,size(hdrs, 2),size(hdrs,1)
-    for i = 1:ntrcs
+    j,jₒ,ntrcs,nhead = 1,2,size(hdrs, 2),size(hdrs,1)
+    for i = 1:fld
         if get(proptyp, hdrs, i) != tracetype[:live]
-            j = i+1
-            while j <= ntrcs
+            jₒ = max(jₒ, i + 1)
+            for j = jₒ:ntrcs
                 if get(proptyp, hdrs, j) == tracetype[:live]
-                    for k = 1:nhead
+                    @inbounds for k = 1:nhead
                         tmp = hdrs[k,i]
                         hdrs[k,i] = hdrs[k,j]
                         hdrs[k,j] = tmp
                     end
+                    jₒ = j + 1
                     break
                 end
-                j += 1
             end
-            j >= ntrcs && break
         end
     end
 end
+TeaSeis.leftjustify!(io::CSeis, hdrs::AbstractArray{UInt8, 2}) = leftjustify!(io, hdrs, fold(io, hdrs))
 
 """
     get(prop::TraceProperty, hdr::Vector)
