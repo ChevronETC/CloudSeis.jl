@@ -1365,8 +1365,8 @@ Allocate and return memory to store traces and trace headers for a single frame.
 TeaSeis.allocframe(io::CSeis) = allocframetrcs(io), allocframehdrs(io)
 
 function regularization_check(io, regularize)
-    if !regularize && !isa(io.cache.compressor, LeftJustifyCompressor)
-        error("regularize=false is only valid for compression method: LeftJustifyCompressor")
+    if !regularize && (!isa(io.cache.compressor, LeftJustifyCompressor) || io.mode != "r")
+        error("regularize=false is only valid for compression method 'LeftJustifyCompressor' and mode read only 'r'.")
     end
 end
 
