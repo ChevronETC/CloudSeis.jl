@@ -1062,3 +1062,31 @@ end
         rm(io)
     end
 end
+
+@testset "CloudSeis optimized read only supported for 'r'" for cloud in clouds
+    sleep(1)
+    r = lowercase(randstring(MersenneTwister(millisecond(now())+49),4))
+    container = mkcontainer(cloud, "test-$r-cs")
+    io = csopen_robust(container, "w", axis_lengths=[10,12,1], force=true)
+
+    t,h = allocframe(io)
+    j = 0
+    for itrace = 1:12
+        set!(prop(io, stockprop[:TRACE]), h, itrace, itrace)
+        set!(prop(io, stockprop[:FRAME]), h, itrace, 1)
+        if rem(itrace,2) == 0
+            set!(prop(io, stockprop[:TRC_TYPE]), h, itrace, tracetype[:live])
+            j += 1
+            t[:,itrace] .= j
+        else
+            set!(prop(io, stockprop[:TRC_TYPE]), h, itrace, tracetype[:dead])
+        end
+    end
+    writeframe(io, t, h)
+    close(io)
+
+    io = csopen(container, "r+")
+    @test_throws ErrorException readframe(io, 1; regularize=false)
+
+    rm(io)
+end
