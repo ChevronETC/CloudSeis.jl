@@ -355,7 +355,7 @@ function csopen_write(containers::Vector{<:Container}, mode; kwargs...)
         end
     end
     axis_units = length(kwargs[:axis_units]) == 0 ? ["unknown" for i=1:ndim] : kwargs[:axis_units]
-    axis_domains = length(kwargs[:axis_domains]) == 0 ? ["unkown" for i=1:ndim] : kwargs[:axis_domains]
+    axis_domains = length(kwargs[:axis_domains]) == 0 ? ["unknown" for i=1:ndim] : kwargs[:axis_domains]
     axis_pstarts = length(kwargs[:axis_pstarts]) == 0 ? [0.0 for i=1:ndim] : kwargs[:axis_pstarts]
     axis_pincs = length(kwargs[:axis_pincs]) == 0 ? [1.0 for i=1:ndim] : kwargs[:axis_pincs]
     axis_lstarts = length(kwargs[:axis_lstarts]) == 0 ? [1 for i=1:ndim] : kwargs[:axis_lstarts]
@@ -459,12 +459,33 @@ end
 function process_kwargs_similarto(;kwargs...)
     io = csopen(kwargs[:similarto])
 
-    local mbytes_per_extent
+    local mbytes_per_extent, _ndims
     if !(isempty(kwargs[:axis_lengths]))
         @warn "If axis_lengths is set, then the extents will be re-computed.  Use `mbytes_per_extent`, `frames_per_extent`, or `extents` keyword arguments to control the behavior."
         mbytes_per_extent = kwargs[:mbytes_per_extent] < 0 ? 1024 : kwargs[:mbytes_per_extent]
+        _ndims = length(kwargs[:axis_lengths])
     else
         mbytes_per_extent = kwargs[:mbytes_per_extent]
+        _ndims = ndims(io)
+    end
+
+    @show kwargs[:axis_units], kwargs[:axis_propdefs]
+    if _ndims > ndims(io)
+        for key in (:axis_propdefs, :axis_units, :axis_domains, :axis_pstarts, :axis_pincs, :axis_lstarts, :axis_lincs)
+            if isempty(get(kwargs, key, []))
+                error("If increasing the number of dimensions, then all of (axis_propdefs, axis_units, axis_domains, axis_pstarts, axis_pincs, axis_lstarts, axis_lincs) must be specified.")
+            end
+        end
+    elseif _ndims < ndims(io)
+        truncating_props = []
+        for key in (:axis_propdefs, :axis_units, :axis_domains, :axis_pstarts, :axis_pincs, :axis_lstarts, :axis_lincs)
+            if isempty(get(kwargs, key, []))
+                push!(truncating_props, key)
+            end
+        end
+        if !isempty(truncating_props)
+            @warn "truncating ($(join(truncating_props, ","))) since the number of dimensions is decreased compared to the 'similarto' data-set."
+        end
     end
 
     local extents
@@ -498,14 +519,14 @@ function process_kwargs_similarto(;kwargs...)
         geometry = kwargs[:geometry] == nothing ? io.geometry : kwargs[:geometry],
         tracepropertydefs = isempty(kwargs[:tracepropertydefs]) ? [io.traceproperties[i].def for i=1:length(io.traceproperties)] : kwargs[:tracepropertydefs],
         dataproperties = isempty(kwargs[:dataproperties]) ? dataproperties : kwargs[:dataproperties],
-        axis_propdefs = isempty(kwargs[:axis_propdefs]) ? [io.axis_propdefs[i] for i=1:length(io.axis_propdefs)] : kwargs[:axis_propdefs],
-        axis_units = isempty(kwargs[:axis_units]) ? [io.axis_units[i] for i=1:length(io.axis_units)] : kwargs[:axis_units],
-        axis_domains = isempty(kwargs[:axis_domains]) ? [io.axis_domains[i] for i=1:length(io.axis_domains)] : kwargs[:axis_domains],
-        axis_lengths = isempty(kwargs[:axis_lengths]) ? [io.axis_lengths[i] for i=1:length(io.axis_lengths)] : kwargs[:axis_lengths],
-        axis_pstarts = isempty(kwargs[:axis_pstarts]) ? [io.axis_pstarts[i] for i=1:length(io.axis_pstarts)] : kwargs[:axis_pstarts],
-        axis_pincs = isempty(kwargs[:axis_pincs]) ? [io.axis_pincs[i] for i=1:length(io.axis_pincs)] : kwargs[:axis_pincs],
-        axis_lstarts = isempty(kwargs[:axis_lstarts]) ? [io.axis_lstarts[i] for i=1:length(io.axis_lstarts)] : kwargs[:axis_lstarts],
-        axis_lincs = isempty(kwargs[:axis_lincs]) ? [io.axis_lincs[i] for i=1:length(io.axis_lincs)] : kwargs[:axis_lincs],
+        axis_propdefs = isempty(kwargs[:axis_propdefs]) ? [io.axis_propdefs[i] for i=1:_ndims] : kwargs[:axis_propdefs],
+        axis_units = isempty(kwargs[:axis_units]) ? [io.axis_units[i] for i=1:_ndims] : kwargs[:axis_units],
+        axis_domains = isempty(kwargs[:axis_domains]) ? [io.axis_domains[i] for i=1:_ndims] : kwargs[:axis_domains],
+        axis_lengths = isempty(kwargs[:axis_lengths]) ? [io.axis_lengths[i] for i=1:_ndims] : kwargs[:axis_lengths],
+        axis_pstarts = isempty(kwargs[:axis_pstarts]) ? [io.axis_pstarts[i] for i=1:_ndims] : kwargs[:axis_pstarts],
+        axis_pincs = isempty(kwargs[:axis_pincs]) ? [io.axis_pincs[i] for i=1:_ndims] : kwargs[:axis_pincs],
+        axis_lstarts = isempty(kwargs[:axis_lstarts]) ? [io.axis_lstarts[i] for i=1:_ndims] : kwargs[:axis_lstarts],
+        axis_lincs = isempty(kwargs[:axis_lincs]) ? [io.axis_lincs[i] for i=1:_ndims] : kwargs[:axis_lincs],
         compressor = compressor
     )
 end

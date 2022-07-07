@@ -691,6 +691,43 @@ const compressors = ("none","blosc","leftjustify")
         rm(io_similar)
     end
 
+    @testset "similarto with new number of dimensions" begin
+        sleep(1)
+        r = randstring('a':'z', 5)
+
+        container = mkcontainer(cloud, "test-$r-cs")
+
+        io = csopen_robust(container, "w",
+            axis_pincs=[0.1,0.2,0.3,0.4],
+            axis_lengths=[10,11,12,13],
+            dataproperties=[DataProperty("P",1)],
+            compressor=compressor)
+
+        io2 = csopen_robust(mkcontainer(cloud, "test-$r-sim-cs"), "w", similarto=container, axis_lengths=[10,11,12])
+        description = JSON.parse(read(io2.containers[1], "description.json", String))
+        @test length(description["fileproperties"]["axis_lengths"]) == 3
+        @test length(description["fileproperties"]["axis_propdefs"]) == 3
+        @test length(description["fileproperties"]["axis_units"]) == 3
+        @test length(description["fileproperties"]["axis_domains"]) == 3
+        @test length(description["fileproperties"]["axis_pstarts"]) == 3
+        @test length(description["fileproperties"]["axis_pincs"]) == 3
+        @test length(description["fileproperties"]["axis_lstarts"]) == 3
+        @test length(description["fileproperties"]["axis_lincs"]) == 3
+
+        @test lincs(io2) == (1,1,1)
+        @test lstarts(io2) == (1,1,1)
+        @test pincs(io2) == (0.1,0.2,0.3)
+        @test pstarts(io2) == (0.0,0.0,0.0)
+        @test domains(io2) == (stockdomain[:UNKNOWN],stockdomain[:UNKNOWN],stockdomain[:UNKNOWN])
+        @test units(io2) == (stockunit[:UNKNOWN],stockunit[:UNKNOWN],stockunit[:UNKNOWN])
+        @test propdefs(io2) == (SAMPLE=stockprop[:SAMPLE], TRACE=stockprop[:TRACE], FRAME=stockprop[:FRAME])
+
+        @test_throws ErrorException csopen(mkcontainer(cloud, "test-$r-sim-2-cs"), "w", similarto=container, axis_lengths=[10,11,12,13,14])
+
+        rm(io)
+        rm(io2)
+    end
+
     @testset "csopen for 6 dimensional data-set" begin
         sleep(1)
         r = lowercase(randstring(MersenneTwister(millisecond(now())+33),4))
