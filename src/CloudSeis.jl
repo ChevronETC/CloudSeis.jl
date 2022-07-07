@@ -248,6 +248,10 @@ using AzStorage, FolderStorage
 container = Folder("mydataset-cs")
 io = csopen(container, "w"; axis_lengths=[10,11,12], axis_pincs=[0.004,10.0,20.0])
 ```
+
+# Notes
+When using the `similarto` option, one can change the number of dimensions of the data-set via `axis_lengths`.  If one shrinks the number of dimensions,
+then various data-set properties (e.g. `axis_units`) will be truncated.  The truncation can be customized by using appropriate key-word arguments.
 """
 function csopen(containers::Vector{<:Container}, mode;
         similarto = "",
