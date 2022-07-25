@@ -473,7 +473,6 @@ function process_kwargs_similarto(;kwargs...)
         _ndims = ndims(io)
     end
 
-    @show kwargs[:axis_units], kwargs[:axis_propdefs]
     if _ndims > ndims(io)
         for key in (:axis_propdefs, :axis_units, :axis_domains, :axis_pstarts, :axis_pincs, :axis_lstarts, :axis_lincs)
             if isempty(get(kwargs, key, []))
