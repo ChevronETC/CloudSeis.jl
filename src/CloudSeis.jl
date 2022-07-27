@@ -1787,10 +1787,11 @@ end
 copy a CloudSeis data-set to `dst`.
 """
 function Base.cp(src::CSeis, dst::Container)
-    iodst = csopen(dst, "w", similarto=dirname(src.containers[1]))
+    iodst = csopen(dst, "w", similarto=src.containers[1])
     trcs, hdrs = allocframe(iodst)
-    for idx in CartesianIndices(size(io)[3:end])
-        fld = readframe!(src, trcs, hdrs, idx)
+    for idx in CartesianIndices(size(src)[3:end])
+        readframe!(src, trcs, hdrs, idx)
+        fld = fold(src, idx)
         if fld > 0
             writeframe(iodst, trcs, hdrs)
         end
