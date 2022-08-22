@@ -1798,7 +1798,7 @@ function cp_extents_batch(ibatch, nbatch, batch_size, iextents, src_extents, dst
 end
 
 """
-    cp(src::CSeis, dst[, extents=:]; batch_size=32, workers=workers())
+    cp(src::CSeis, dst[, extents=:]; batch_size=32, workers=Distributed.workers)
 
 Copy a CloudSeis data-set to `dst` and where `dst` is either of type `Container` or
 of type `Vector{Container}`.  The latter is used for sharding data across multiple
