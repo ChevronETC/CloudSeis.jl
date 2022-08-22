@@ -1781,30 +1781,78 @@ function Base.empty!(io::CSeis)
     end
 end
 
-"""
-    cp(src::CSeis, dst::Container)
-
-copy a CloudSeis data-set to `dst`.
-"""
-function Base.cp(src::CSeis, dst::Container)
-    iodst = csopen(dst, "w", similarto=dirname(src.containers[1]))
-    trcs, hdrs = allocframe(iodst)
-    for idx in CartesianIndices(size(io)[3:end])
-        fld = readframe!(src, trcs, hdrs, idx)
-        if fld > 0
-            writeframe(iodst, trcs, hdrs)
-        end
+function cp_extent(iextent, src_extent, dst_extent, nextents)
+    if isfile(src_extent.container, src_extent.name)
+        _filesize = filesize(src_extent.container, src_extent.name) / 1000 / 1000
+        t = @elapsed cp(src_extent.container, src_extent.name, dst_extent.container, dst_extent.name)
+        @info "copied extent $iextent/$nextents in $t seconds ($_filesize MB, $(_filesize / t) MB/s)"
     end
-    close(iodst)
+    nothing
+end
+
+function cp_extents_batch(ibatch, nbatch, batch_size, iextents, src_extents, dst_extents, nextents)
+    i1 = (ibatch-1)*batch_size + 1
+    i2 = ibatch == nbatch ? length(iextents) : i1 + batch_size - 1
+    asyncmap(iextent->cp_extent(iextents[iextent], src_extents[iextent], dst_extents[iextent], nextents), i1:i2)
+    nothing
 end
 
 """
-    mv(src::CSeis, dst::Container)
+    cp(src::CSeis, dst[, extents=:]; batch_size=32, workers=workers())
 
-move a CloudSeis data-set to `dst`.
+Copy a CloudSeis data-set to `dst` and where `dst` is either of type `Container` or
+of type `Vector{Container}`.  The latter is used for sharding data across multiple
+storage accounts.
+
+The option `extents` can be used to copy a sub-set of the CloudSeis data extents (e.g. `1:10`).
+The `batch_size` option allows extents to be copied in batches and where the number of extents
+associated with each batch is set via `batch_size`.  Within a batch, each extent is copied
+via an asynchronous task.
+
+The `cp` method will be executed on the set of machines defined by `workers`.  Note that the
+work will be sent to the workers one batch at a time.
 """
-function Base.mv(src::CSeis, dst::Container)
-    cp(src, dst, project=project, location=location)
+function Base.cp(src::CSeis, dst_containers::Vector{<:Container}, extents=Colon(); batch_size=32, workers=Distributed.workers)
+    description = JSON.parse(read(src.containers[1], "description.json", String))
+
+    src_extents = [Extent(description["extents"][iextent], src.containers) for iextent in eachindex(description["extents"])]
+    dst_extents = similar(src_extents)
+
+    for iextent in eachindex(description["extents"])
+        k = rem(iextent - 1, length(dst_containers)) + 1
+        dst_extents[iextent] = Extent(src_extents[iextent].name, dst_containers[k], src_extents[iextent].frameindices)
+        description["extents"][iextent] = Dict(dst_extents[iextent])
+    end
+
+    for dst_container in dst_containers
+        mkpath(dst_container)
+    end
+
+    write(dst_containers[1], "description.json", json(description, 1))
+
+    local iextents
+    if extents == Colon()
+        iextents = 1:length(description["extents"])
+    else
+        iextents = extents
+    end
+
+    nextents = length(description["extents"])
+    nbatch = clamp(div(length(iextents), batch_size), 1, length(iextents))
+
+    pmap(ibatch->cp_extents_batch(ibatch, nbatch, batch_size, iextents, src_extents, dst_extents, nextents), CachingPool(workers()), 1:nbatch)
+    nothing
+end
+Base.cp(src::CSeis, dst_container::Container, extents=Colon(); kwargs...) = cp(src, [dst_container], extents; kwargs...)
+
+"""
+    mv(src::CSeis, dst::Container; batch_size=32, workers=Distributed.workers)
+
+move a CloudSeis data-set to `dst`.  See `cp` for a description of `batch_size`
+and `workers`.
+"""
+function Base.mv(src::CSeis, dst::Container; kwargs...)
+    cp(src, dst, project=project, location=location; kwargs...)
     rm(src)
 end
 
