@@ -1,4 +1,4 @@
-using AzSessions, AzStorage, CloudSeis, Dates, Distributed, FolderStorage, HTTP, JSON, Test, UUIDs
+using AzSessions, AzStorage, CloudSeis, Dates, Distributed, FolderStorage, HTTP, JSON, Random, Test, UUIDs
 
 credentials = JSON.parse(ENV["AZURE_CREDENTIALS"])
 AzSessions.write_manifest(;client_id=credentials["clientId"], client_secret=credentials["clientSecret"], tenant=credentials["tenantId"])
