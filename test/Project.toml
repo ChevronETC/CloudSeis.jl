@@ -1,0 +1,11 @@
+[deps]
+AzSessions = "f239b30d-ae6b-58be-a2d5-7e9f30e280a9"
+AzStorage = "c6697862-1611-5eae-9ef8-48803c85c8d6"
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+Distributed = "8ba89e20-285c-5b6f-9357-94700520ee1b"
+FolderStorage = "37e990fb-a500-53d7-846b-4c8aba66999e"
+HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
+JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+UUIDs = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
