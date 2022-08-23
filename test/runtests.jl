@@ -642,6 +642,47 @@ const compressors = ("none","blosc","leftjustify")
         rm(io)
     end
 
+    @testset "cp" begin
+        sleep(1)
+        r = lowercase(randstring(MersenneTwister(millisecond(now())+28),4))
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,50], frames_per_extent=10, compressor=compressor)
+        x = rand(Float32,10,11,50)
+        write(io, x, :, :, :)
+        close(io)
+        r = lowercase(randstring('a':'z',6))
+
+        c = mkcontainer(cloud, "test-$r-cs")
+        cp(io, c)
+        rm(io)
+
+        iocp = csopen(c)
+        @test readtrcs(iocp, :, :, :) ≈ x
+        rm(iocp)
+    end
+
+    @testset "cp, parallel" begin
+        sleep(1)
+        r = lowercase(randstring(MersenneTwister(millisecond(now())+28),4))
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,50], frames_per_extent=10, compressor=compressor)
+        x = rand(Float32,10,11,50)
+        write(io, x, :, :, :)
+        close(io)
+        
+        r = lowercase(randstring('a':'z',7))
+        c = mkcontainer(cloud, "test-$r-cs")
+
+        addprocs(2)
+        @everywhere using AzStorage,FolderStorage,CloudSeis
+        cp(io, c)
+        rmprocs(workers())
+
+        rm(io)
+
+        iocp = csopen(c)
+        @test readtrcs(iocp, :, :, :) ≈ x
+        rm(iocp)
+    end
+
     @testset "robust cscreate" begin
         sleep(1)
         r = lowercase(randstring(MersenneTwister(millisecond(now())+30),4))
