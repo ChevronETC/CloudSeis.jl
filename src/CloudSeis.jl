@@ -712,6 +712,7 @@ propertyformatstring(T::Union{Type{Int32},Type{Vector{Int32}}}) = "INTEGER"
 propertyformatstring(T::Union{Type{Int64},Type{Vector{Int64}}}) = "LONG"
 propertyformatstring(T::Union{Type{Float32},Type{Vector{Float32}}}) = "FLOAT"
 propertyformatstring(T::Union{Type{Float64},Type{Vector{Float64}}}) = "DOUBLE"
+propertyformatstring(T::Type{Vector{UInt8}}) = "BYTESTRING"
 propertyformatstring(def::TracePropertyDef) = propertyformatstring(def.format)
 propertyformatstring(prop::TraceProperty) = propertyformatstring(prop.def)
 

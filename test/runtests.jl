@@ -354,6 +354,30 @@ const compressors = ("none","blosc","leftjustify")
         rm(io)
     end
 
+    @testset "string props" begin
+        r = uuid4()
+        pdef = TracePropertyDef("X","XX",Vector{UInt8},32)
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], tracepropertydefs=[pdef], compressor=compressor)
+        t,h = allocframe(io)
+        for i = 1:11
+            set!(prop(io,"TRACE"), h, i, i)
+            set!(prop(io,"FRAME"), h, i, 1)
+            set!(prop(io,"TRC_TYPE"), h, i, tracetype[:live])
+            set!(prop(io,"X"), h, i, "HELLO")
+        end
+        writeframe(io,t,h)
+        close(io)
+
+        io = csopen(mkcontainer(cloud, "test-$r-cs"))
+        t,h = readframe(io,1)
+
+        for i = 1:11
+            @test unsafe_string(pointer(get(prop(io,"X"), h, i))) == "HELLO"
+        end
+        close(io)
+        rm(io)
+    end
+
     @testset "pincs" begin
         r = uuid4()
         io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_pincs=[1.0,2.0,3.0], compressor=compressor)
