@@ -900,6 +900,11 @@ const compressors = ("none","blosc","leftjustify")
         end
         _idxs = [CartesianIndex((i,)) for i=1:12]
         @test idxs == _idxs
+
+
+        lidxs = LinearIndices(LogicalIndices(io))
+        @test collect(lidxs) ≈ [1:12;]
+
         rm(io)
 
         r = uuid4()

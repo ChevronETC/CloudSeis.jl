@@ -1288,6 +1288,8 @@ Base.length(c::LogicalIndices) = prod(size(c.io)[3:end])
 
 Base.iterate(c::LogicalIndices, state=1) = state > length(c) ? nothing : (c[state], state+1)
 
+Base.LinearIndices(c::LogicalIndices) = LinearIndices(CartesianIndices(c.io.axis_lengths[3:end]))
+
 function extentindex_from_frameindex(io, idx::CartesianIndex)
     frameidx = linearframeidx(io, idx)
 
