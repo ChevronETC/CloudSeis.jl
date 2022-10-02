@@ -1,6 +1,6 @@
 module CloudSeis
 
-using AbstractStorage, Blosc, Distributed, JSON, Pkg, Random, TeaSeis, UUIDs, ZfpCompression
+using AbstractStorage, Blosc, CvxCompress, Distributed, JSON, Pkg, Random, TeaSeis, UUIDs, ZfpCompression
 
 struct TracePropertyDef{T}
     label::String
@@ -193,67 +193,42 @@ end
 Base.copy(c::ZfpCompressor) = ZfpCompressor(c.tol, c.precision, c.rate)
 hdrlength_multipleof(_::ZfpCompressor) = 4
 
-struct ZfpCompressor{T,P,R} <: AbstractCompressor
-    tol::T
-    precision::P
-    rate::R
+struct CloudSeisCvxCompressor <: AbstractCompressor
+    b1::Int
+    b2::Int
+    b3::Int
+    scale::Float32
 end
-function ZfpCompressor(;kwargs...)
-    if length(kwargs) == 0
-        return ZfpCompressor(nothing, nothing, nothing)
+function CloudSeisCvxCompressor(;b1=16,b2=16,b3=16,scale=0.001f0)
+    if b1 > 1
+        b1 = clamp(nextpow(2, b1), 8, 256)
     end
-
-    length(kwargs) == 1 || error("zfp options are at most one of ':tol', ':precision', and ':rate'")
-    key,value = keys(kwargs)[1],values(kwargs)[1]
-
-    if key == :tol
-        return ZfpCompressor(value, nothing, nothing)
-    elseif key == :precision
-        return ZfpCompressor(nothing, value, nothing)
-    elseif key == :rate
-        return ZfpCompressor(nothing, nothing, value)
-    else
-        error("zfp options are at most one of ':tol', ':precision', and ':rate'")
+    if b2 > 1
+        b2 = clamp(nextpow(2, b2), 8, 256)
     end
+    if b3 > 1
+        b3 = clamp(nextpow(2, b3), 8, 256)
+    end
+    CloudSeisCvxCompressor(b1,b2,b3,scale)
 end
-
-kwargs(compressor::ZfpCompressor{<:Real,Nothing,Nothing}) = (tol=compressor.tol,)
-kwargs(compressor::ZfpCompressor{Nothing,<:Real,Nothing}) = (precision=compressor.precision,)
-kwargs(compressor::ZfpCompressor{Nothing,Nothing,<:Real}) = (rate=compressor.rate,)
-kwargs(_::ZfpCompressor{Nothing,Nothing,Nothing}) = ()
-
-function ZfpCompressor(d::Dict)
-    if haskey(d["library_options"], "tol")
-        return ZfpCompressor(Float64(d["library_options"]["tol"]), nothing, nothing)
-    elseif haskey(d["library_options"], "precision")
-        return ZfpCompressor(nothing, Int32(d["library_options"]["precision"]), nothing)
-    elseif haskey(d["library_options"], "rate")
-        return ZfpCompressor(nothing, nothing, Int(d["library_options"]["rate"]))
-    else
-        return ZfpCompressor(nothing, nothing, nothing)
-    end
-end
-
-function Dict(c::ZfpCompressor)
-    local library_options
-    if c.tol !== nothing
-        library_options = Dict("tol" => c.tol)
-    elseif c.precision !== nothing
-        library_options = Dict("precision" => c.precision)
-    elseif c.rate !== nothing
-        library_options = Dict("rate" => c.rate)
-    else
-        library_options = Dict()
-    end
-
+kwargs(c::CloudSeisCvxCompressor) = (b1=c.b1, b2=c.b2, b3=c.b3, scale=scale)
+CloudSeisCvxCompressor(d::Dict) = CloudSeisCvxCompressor(d["library_options"]["b1"], d["library_options"]["b2"], d["library_options"]["b3"], d["library_options"]["scale"])
+function Dict(c::CloudSeisCvxCompressor)
     Dict(
-        "method" => "zfp",
-        "library" => "ZfpCompression.jl",
-        "library_version" => string(pkgversion(UUID("43441a71-1662-41c6-b8ea-40ed1525242b"))), # this UUID is specific to ZfpCompression.jl
-        "library_options" => library_options
+        "method" => "cvx",
+        "library" => "CvxCompress.jl",
+        "library_version" => string(pkgversion(UUID("a74b3585-a348-5f62-a45c-50e91977d574"))), # this UUID is specific to CvxCompress.jl
+        "library_options" => Dict(
+            "b1" => c.b1,
+            "b2" => c.b2,
+            "b3" => c.b3,
+            "scale" => c.scale
+        )
     )
 end
-Base.copy(c::ZfpCompressor) = ZfpCompressor(c.tol, c.precision, c.rate)
+
+Base.copy(c::CloudSeisCvxCompressor) = CloudSeisCvxCompressor(c.b1, c.b2, c.b3, c.scale)
+hdrlength_multipleof(_::CloudSeisCvxCompressor) = 4
 
 struct LeftJustifyCompressor <: AbstractCompressor end
 LeftJustifyCompressor(d::Dict) = LeftJustifyCompressor()
@@ -273,6 +248,8 @@ function Compressor(d::Dict)
         return BloscCompressor(d)
     elseif method == "zfp"
         return ZfpCompressor(d)
+    elseif method == "cvx"
+        return CloudSeisCvxCompressor(d)
     elseif method == "leftjustify"
         return LeftJustifyCompressor(d)
     else
@@ -367,8 +344,8 @@ container.  The `axis_lengths` vector is of at-least length 3.
 * `axis_pincs::Vector{Float64}` Physical deltas for each axis.  If not set, then `1.0` is used for the physical delta for each axis.
 * `axis_lstarts::Vector{Int}` Logical starts for each axis.  If not set, then `1` is used for the logical start for each axis.
 * `axis_lincs::Vector{Int}` Logical increments for each axis.  If not set, then `1` is used for the logical increment for each axis.
-* `compressor="leftjustify"` Compress the cache before writing to disk.  This is particularly useful for data with variable fold.  chooose from: ("none", "blosc", "leftjustify", "zfp")
-* `compressor_options=()` Pass options as key-word arguments to the compression algorithm.  Currently, only `"zfp"` has options[1]
+* `compressor="leftjustify"` Compress the cache before writing to disk.  This is particularly useful for data with variable fold.  chooose from: ("none", "blosc", "leftjustify", "zfp", "cvx")
+* `compressor_options=()` Pass options as key-word arguments to the compression algorithm.  Currently, only `"zfp"` and `"cvx"` have options[1]
 
 # Example
 ## Azure storage
@@ -399,6 +376,12 @@ Please refer to ZFPCompressor.jl for more information.  If `compressor_options` 
 the defaults are `(precision=16,)`.  Also, note that `compression_options=()` results
 in ZFP lossless compression.  ZFP lossless compression will be used for the headers and foldmap regardless
 of the choice of `compressor_options`.
+
+* The cvx compression options are `b1`, `b2`, `b3` and `scale`.  So, for example:
+```
+```
+Please refer to CvxCompress.jl for more information.  If `compressor_options` is no supplied, then
+the defaults are `(b1=16,b2=16,b3=16,scale=1e-2)`.
 """
 function csopen(containers::Vector{<:Container}, mode;
         similarto = "",
@@ -571,25 +554,20 @@ function csopen_write(containers::Vector{<:Container}, mode; kwargs...)
     io
 end
 
-compressor_options(;kwargs...) = Dict("none"=>NotACompressor(), ""=>NotACompressor(), "blosc"=>BloscCompressor("blosclz", 5, true), "zfp"=>ZfpCompressor(;kwargs...), "leftjustify"=>LeftJustifyCompressor())
-compressor_error() = error("(compressor=$(kwargs[:compressor])) ∉ (\"\",\"none\",\"blosc\",\"zfp\",\"leftjustify\")")
+compressors() = Dict("none"=>NotACompressor, ""=>NotACompressor, "blosc"=>()->BloscCompressor("blosclz", 5, true), "zfp"=>ZfpCompressor, "cvx"=>CloudSeisCvxCompressor, "leftjustify"=>LeftJustifyCompressor)
+compressor_error() = error("(compressor=$(kwargs[:compressor])) ∉ (\"\",\"none\",\"blosc\",\"zfp\",\"cvx\",\"leftjustify\")")
 
 function process_kwargs(;kwargs...)
-    local compressors
+    local compressor_options
     if kwargs[:compressor] == "zfp" && kwargs[:compressor_options] === nothing
-        compressors = compressor_options(;precision=16)
+        compressor_options = (precision=16,)
     elseif kwargs[:compressor_options] === nothing
-        compressors = compressor_options()
+        compressor_options = ()
     else
-        compressors = compressor_options(;kwargs[:compressor_options]...)
+        compressor_options = kwargs[:compressor_options]
     end
-    local compressor
-    if kwargs[:compressor] === nothing
-        compressor = compressors["leftjustify"]
-    else
-        kwargs[:compressor] ∈ keys(compressors) || compressor_error()
-        compressor = compressors[kwargs[:compressor]]
-    end
+
+    compressor = compressors()[kwargs[:compressor] === nothing ? "leftjustify" : kwargs[:compressor]](;compressor_options...)
 
     (
         similarto = kwargs[:similarto],
@@ -660,16 +638,16 @@ function process_kwargs_similarto(;kwargs...)
     if kwargs[:compressor] === nothing
         compressor = io.cache.compressor
     else
-        local compressors
+        local compressor_options
         if kwargs[:compressor] == "zfp" && kwargs[:compressor_options] === nothing
-            compressors = compressor_options(;precision=16)
+            compressor_options = (precision=16,)
         elseif kwargs[:compressor_options] === nothing
-            compressors = compressor_options()
+            compressor_options = ()
         else
-            compressors = compressor_options(;kwargs[:compressor_options]...)
+            compressor_options = kwargs[:compressor_options]
         end
-        kwargs[:compressor] ∈ keys(compressors) || compressor_error()
-        compressor = compressors[kwargs[:compressor]]
+        kwargs[:compressor] ∈ keys(compressors()) || compressor_error()
+        compressor = compressors()[kwargs[:compressor]](;compressor_options...)
     end
 
     (
@@ -880,17 +858,10 @@ propertyformatstring(T::Type{Vector{UInt8}}) = "BYTESTRING"
 propertyformatstring(def::TracePropertyDef) = propertyformatstring(def.format)
 propertyformatstring(prop::TraceProperty) = propertyformatstring(prop.def)
 
-function _cachesize(io::CSeis, extentindex)
+function cachesize(io::CSeis, extentindex)
     nframes = length(io.extents[extentindex].frameindices)
     nframes*(sizeof(Int) + (io.hdrlength + sizeof(io.traceformat)*size(io,1))*size(io,2))
 end
-
-function cachesize(io::CSeis{T,N,<:ZfpCompressor}, extentindex) where {T,N}
-    n,r = divrem(_cachesize(io, extentindex), 4)
-    4*(n + (r == 0 ? 0 : 1)) # zfp library does not allow compression from UInt8 array
-end
-
-cachesize(io, extentindex) = _cachesize(io, extentindex)
 
 function cachesize_foldmap(io::CSeis, extentindex)
     nframes = length(io.extents[extentindex].frameindices)
@@ -963,6 +934,50 @@ function cache_from_file!(io::CSeis{T,N,<:ZfpCompressor}, extentindex, regulariz
         ntrcs = read(io_cdata, Int)
         ctrcs = read!(io_cdata, Vector{UInt8}(undef, ntrcs))
         zfp_decompress!(unsafe_gettrcs(io, extentindex), ctrcs; kwargs(io.cache.compressor)...)
+        empty!(ctrcs)
+    end
+    mb = length(io.cache.data) / 1_000_000
+    mb_compressed = length(cdata) / 1_000_000
+    empty!(cdata)
+    mbps_read = mb_compressed/t_read
+    mbps_decompress = mb / t_decompress
+    mbps = mb / (t_read + t_decompress)
+    @debug "...data read and decompressed (effective: $mbps MB/s; decompression: $mbps_decompress MB/s; read: $mbps_read MB/s -- $mb MB; $mb_compressed compressed MB)"
+    nothing
+end
+
+function cache_from_file!(io::CSeis{T,N,<:CloudSeisCvxCompressor}, extentindex, regularize) where {T,N}
+    regularize || error("regularize=false is not supported for 'CloudSeisCvxCompressor'")
+    @debug "reading and decompressing extent $extentindex..."
+    t_read = @elapsed begin
+        cdata = read!(io.extents[extentindex].container, io.extents[extentindex].name, Vector{UInt8}(undef, filesize(io.extents[extentindex].container, io.extents[extentindex].name)))
+    end
+
+    t_decompress = @elapsed begin
+        io_cdata = IOBuffer(cdata; read=true, write=false)
+        io.cache.data = zeros(UInt8, cachesize(io, extentindex))
+
+        nfmap = read(io_cdata, Int)
+        cfmap = read!(io_cdata, Vector{UInt8}(undef, nfmap))
+        cfmap = zfp_decompress!(unsafe_foldmap(io, extentindex), cfmap)
+
+        nhdrs = read(io_cdata, Int)
+        chdrs = read!(io_cdata, Vector{UInt8}(undef, nhdrs))
+        zfp_decompress!(unsafe_gethdrs(io, extentindex), chdrs)
+        empty!(chdrs)
+
+        ntrcs_bytes = read(io_cdata, Int)
+        ntrcs = div(ntrcs_bytes, 4)
+        ctrcs = read!(io_cdata, Vector{UInt32}(undef, ntrcs))
+        trcs = unsafe_gettrcs(io, extentindex)
+
+        b3 = min(size(trcs,3), io.cache.compressor.b3)
+        if b3 > 1
+            b3 = clamp(nextpow(2, b3), 8, 256)
+        end
+
+        c = CvxCompress.CvxCompressor((io.cache.compressor.b1,io.cache.compressor.b2,b3), io.cache.compressor.scale)
+        CvxCompress.decompress!(trcs, c, ctrcs, ntrcs_bytes)
         empty!(ctrcs)
     end
     mb = length(io.cache.data) / 1_000_000
@@ -1102,7 +1117,7 @@ function cache_foldmap!(io::CSeis{T,N,BloscCompressor}, extentindex::Integer, fo
     extentindex
 end
 
-function cache_foldmap!(io::CSeis{T,N,<:ZfpCompressor}, extentindex::Integer, force=false) where {T,N}
+function cache_foldmap!(io::Union{CSeis{T,N,<:ZfpCompressor},CSeis{T,N,CloudSeisCvxCompressor}}, extentindex::Integer, force=false) where {T,N}
     io.mode == "r" || partialcache_error()
 
     if extentindex == io.cache.extentindex && io.cache.type ∈ (CACHE_ALL,CACHE_ALL_LEFT_JUSTIFY) && !force
@@ -1232,6 +1247,55 @@ function Base.flush(io::CSeis{T,N,<:ZfpCompressor}) where {T,N}
         ctrcs = zfp_compress(trcs; nthreads=Sys.CPU_THREADS, write_header=false, kwargs(io.cache.compressor)...)
         write(io_cdata, length(ctrcs))
         write(io_cdata, ctrcs)
+        empty!(ctrcs)
+    end
+
+    cdata = take!(io_cdata)
+    t_write = @elapsed write(io.extents[io.cache.extentindex].container, io.extents[io.cache.extentindex].name, cdata)
+    mb = length(io.cache.data)/1_000_000
+    mb_compressed = length(cdata)/1_000_000
+    mbps_write = mb_compressed/t_write
+    mbps_compress = mb/t_compress
+    mbps = mb/(t_write+t_compress)
+    @debug "...data compressed and wrote (effective: $mbps MB/s ; compression: $mbps_compress MB/s ; write: $mbps_write MB/s -- $mb MB; $mb_compressed compressed MB)"
+    nothing
+end
+
+function Base.flush(io::CSeis{T,N,<:CloudSeisCvxCompressor}) where {T,N}
+    if io.cache.extentindex == 0
+        return nothing
+    end
+
+    @debug "compressing and writing extent $(io.cache.extentindex)..."
+    t_compress = @elapsed begin
+        fmap = unsafe_foldmap(io)
+        hdrs = unsafe_gethdrs(io)
+        trcs = unsafe_gettrcs(io)
+
+        map(i->begin size(hdrs,i) > typemax(Int32) && error("cvx: each hdrs dimension must be less than $(typemax(Int32)), size(hdrs,$i)=$(size(hdrs,i))") end, 1:ndims(hdrs))
+
+        io_cdata = IOBuffer(;read=false, write=true)
+
+        cfmap = zfp_compress(fmap; nthreads=Sys.CPU_THREADS, write_header=false)
+        write(io_cdata, length(cfmap))
+        write(io_cdata, cfmap)
+        empty!(cfmap)
+
+        chdrs = zfp_compress(hdrs; nthreads=Sys.CPU_THREADS, write_header=false)
+        write(io_cdata, length(chdrs))
+        write(io_cdata, chdrs)
+        empty!(chdrs)
+
+        b3 = min(size(trcs,3), io.cache.compressor.b3)
+        if b3 > 1
+            b3 = clamp(nextpow(2, b3), 8, 256)
+        end
+
+        c = CvxCompress.CvxCompressor((io.cache.compressor.b1,io.cache.compressor.b2,b3),io.cache.compressor.scale)
+        ctrcs = Vector{UInt32}(undef, ceil(Int,4*length(trcs)*sizeof(io.traceformat)/4))
+        n = CvxCompress.compress!(ctrcs, c, trcs)
+        write(io_cdata, n)
+        write(io_cdata, view(ctrcs,1:div(n,4)))
         empty!(ctrcs)
     end
 
