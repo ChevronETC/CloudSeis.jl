@@ -1,9 +1,7 @@
 using AzSessions, AzStorage, CloudSeis, Dates, Distributed, FolderStorage, HTTP, JSON, Random, Test, UUIDs
 
-credentials = JSON.parse(ENV["AZURE_CREDENTIALS"])
-AzSessions.write_manifest(;client_id=credentials["clientId"], client_secret=credentials["clientSecret"], tenant=credentials["tenantId"])
-
-session = AzSession(;protocal=AzClientCredentials, client_id=credentials["clientId"], client_secret=credentials["clientSecret"], resource="https://storage.azure.com/")
+AzSessions.write_manifest(;client_id=ENV["CLIENT_ID"], client_secret=ENV["CLIENT_SECRET"], tenant=ENV["TENANT_ID"])
+session = AzSession(;protocal=AzClientCredentials, resource="https://storage.azure.com/")
 
 const storageaccount1 = ENV["STORAGE_ACCOUNT1"]
 const storageaccount2 = ENV["STORAGE_ACCOUNT2"]
