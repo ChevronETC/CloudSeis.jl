@@ -17,6 +17,7 @@ ZfpCompression = "43441a71-1662-41c6-b8ea-40ed1525242b"
 [compat]
 AbstractStorage = "^1.1"
 Blosc = "0.7"
+CvxCompress = "1"
 JSON = "0.21"
 TeaSeis = "0.4"
 ZfpCompression = "0.2"
