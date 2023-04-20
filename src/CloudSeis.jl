@@ -1825,9 +1825,10 @@ function TeaSeis.readframehdrs!(io::CSeis, hdrs::AbstractArray{UInt8,2}, idx::Ca
     @boundscheck regularization_check(io, regularize)
     _hdrs = getframehdrs(io, regularize, idx)
     copyto!(hdrs, 1, _hdrs, 1, length(_hdrs))
-    if !regularize
+    fld = fold(io, idx)
+    if !regularize || fld == 0
         prop_trctype = prop(io, stockprop[:TRC_TYPE])
-        for itrace = (fold(io, idx)+1):size(io, 2)
+        for itrace = (fld+1):size(io, 2)
             set!(prop_trctype, hdrs, itrace, tracetype[:dead])
         end
     end
@@ -1878,6 +1879,16 @@ TeaSeis.readframe(io::CSeis, idx::CartesianIndex; regularize=true) = readframe!(
 TeaSeis.readframe!(io::CSeis, trcs::AbstractArray, hdrs::AbstractArray{UInt8,2}, idx...; regularize=true) = readframe!(io, trcs, hdrs, CartesianIndex(idx); regularize)
 TeaSeis.readframe(io::CSeis, idx...; regularize=true) = readframe(io, CartesianIndex(idx); regularize)
 
+function get_first_live_trace(io, hdrs)
+    prop_trctype = prop(io, stockprop[:TRC_TYPE])
+    for itrace = 1:size(io,2)
+        if get(prop_trctype, hdrs, itrace) == tracetype[:live]
+            return itrace
+        end
+    end
+    return size(io,2)+1
+end
+
 """
     writeframe(io::CSeis, trcs, hdrs)
 
@@ -1885,7 +1896,11 @@ Write a frame to `io`.  The location of the frame is determined
 by the axis headers set in `hdrs`.
 """
 function TeaSeis.writeframe(io::CSeis, trcs::AbstractArray, hdrs::AbstractArray{UInt8,2})
-    idx = CartesianIndex(ntuple(i->get(prop(io, io.axis_propdefs[i+2]), hdrs, 1), ndims(io)-2))
+    j = get_first_live_trace(io, hdrs)
+    if j > size(io, 2)
+        return 0
+    end
+    idx = CartesianIndex(ntuple(i->get(prop(io, io.axis_propdefs[i+2]), hdrs, j), ndims(io)-2))
     cache!(io, idx)
     fld = fold(io, hdrs)
     fold!(io, fld, idx)

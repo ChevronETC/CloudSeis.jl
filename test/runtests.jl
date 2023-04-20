@@ -1,7 +1,12 @@
 using AzSessions, AzStorage, CloudSeis, Dates, Distributed, FolderStorage, HTTP, JSON, Random, Test, UUIDs
 
-AzSessions.write_manifest(;client_id=ENV["CLIENT_ID"], client_secret=ENV["CLIENT_SECRET"], tenant=ENV["TENANT_ID"])
-session = AzSession(;protocal=AzClientCredentials, resource="https://storage.azure.com/")
+global session
+if haskey(ENV, "CLIENT_ID") && haskey(ENV, "CLIENT_SECRET") && haskey(ENV, "CLIENT_ID")
+    AzSessions.write_manifest(;client_id=ENV["CLIENT_ID"], client_secret=ENV["CLIENT_SECRET"], tenant=ENV["TENANT_ID"])
+    session = AzSession(;protocal=AzClientCredentials, resource="https://storage.azure.com/")
+else
+    session = AzSession(;scope="openid+offline_access+https://storage.azure.com/user_impersonation")
+end
 
 const storageaccount1 = ENV["STORAGE_ACCOUNT1"]
 const storageaccount2 = ENV["STORAGE_ACCOUNT2"]
@@ -156,8 +161,8 @@ const compressors = ("none","blosc","leftjustify","zfp","cvx")
                 if i ∈ J[iframe]
                     @test t[:,i] ≈ x[:,i,iframe] rtol=rtol
                     @test get(prop(io,io.axis_propdefs[3]), h, i) == iframe
+                    @test get(prop(io,io.axis_propdefs[2]), h, i) == i
                 end
-                @test get(prop(io,io.axis_propdefs[2]), h, i) == i
                 @test get(prop(io,stockprop[:TRC_TYPE]), h, i) == (i ∈ J[iframe] ? tracetype[:live] : tracetype[:dead])
             end
         end
@@ -871,8 +876,8 @@ const compressors = ("none","blosc","leftjustify","zfp","cvx")
                 if i ∈ J[iframe]
                     @test t[:,i] ≈ x[:,i,iframe] rtol=rtol
                     @test get(prop(io,io.axis_propdefs[3]), h, i) == 6 + 3*(iframe-1)
+                    @test get(prop(io,io.axis_propdefs[2]), h, i) == 2 + 2*(i - 1)
                 end
-                @test get(prop(io,io.axis_propdefs[2]), h, i) == 2 + 2*(i - 1)
                 @test get(prop(io,stockprop[:TRC_TYPE]), h, i) == (i ∈ J[iframe] ? tracetype[:live] : tracetype[:dead])
             end
         end
@@ -1170,6 +1175,21 @@ end
 
     io = csopen(container, "r+")
     @test_throws ErrorException readframe(io, 1; regularize=false)
+
+    rm(io)
+end
+
+@testset "Behave well when writing an empty frame" for cloud in clouds
+    r = uuid4()
+    container = mkcontainer(cloud, "test-$r-cs")
+    io = csopen_robust(container, "w", axis_lengths=[10,12,1], force=true)
+
+    t,h = allocframe(io)
+    for itrace = 1:size(io,2)
+        set!(prop(io, stockprop[:TRC_TYPE]), h, itrace, tracetype[:dead])
+    end
+    @test writeframe(io, t, h) == 0
+    close(io)
 
     rm(io)
 end
