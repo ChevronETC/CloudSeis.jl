@@ -2122,7 +2122,7 @@ Consolodate data-set extents into fewer extents.
 
 # Optional keyword arguments
 * `mbytes_per_extent=1000` set the size of each output extent via either the size of each extent
-* frames_per_extent=0` set the size of each output extent via the number of frames allowed in each extent.
+* `frames_per_extent=0` set the size of each output extent via the number of frames allowed in each extent.
 """
 function Base.reduce(io::CSeis; mbytes_per_extent=1000, frames_per_extent=0)
     local nextents
