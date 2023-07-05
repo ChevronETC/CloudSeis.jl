@@ -373,7 +373,7 @@ container = AzContainer("mydataset-cs"; storageaccount="mystorageacccount")
 io = csopen(container, "w"; axis_lengths=[10,11,12], compressor="zfp", compressor_options=(tol=1e-4,))
 ```
 Please refer to ZFPCompressor.jl for more information.  If `compressor_options` is not supplied, then
-the defaults are `(precision=16,)`.  Also, note that `compression_options=()` results
+the defaults are `(precision=16,)`.  Also, note that `compressor_options=()` results
 in ZFP lossless compression.  ZFP lossless compression will be used for the headers and foldmap regardless
 of the choice of `compressor_options`.
 
