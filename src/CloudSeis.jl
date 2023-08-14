@@ -2381,10 +2381,12 @@ function Base.in(propdef::TracePropertyDef, io::CSeis)
 end
 
 """
-    dataproperty(io::CSeis, name)
+    dataproperty(io::CSeis, name[, default_value])
 
 Return the CloudSeis data property with `name`
-that is in the CloudSeis data-set `io`.
+that is in the CloudSeis data-set `io`.  If
+`default_value` is provided and a property with
+`name` does not exist, then return `default_value`.
 """
 function dataproperty(io::CSeis, nm)
     try
@@ -2393,6 +2395,8 @@ function dataproperty(io::CSeis, nm)
         error("data property with label $nm does not exist")
     end
 end
+
+dataproperty(io::CSeis, nm, default_value) = hasdataproperty(io::CSeis, nm) ? dataproperty(io, nm) : default_value
 
 """
     hasdataproperty(io::CSeis, name)
