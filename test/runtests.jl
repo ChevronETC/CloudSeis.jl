@@ -539,6 +539,8 @@ const compressors = ("none","blosc","leftjustify","zfp","cvx")
         io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], dataproperties=[DataProperty("X",1)], compressor=compressor, compressor_options=compressor_options)
 
         @test dataproperty(io, "X") == 1
+        @test dataproperty(io, "X", 2) == 1
+        @test dataproperty(io, "Y", 2) == 2
 
         close(io)
         rm(io)
