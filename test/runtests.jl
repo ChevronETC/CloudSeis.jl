@@ -1,5 +1,9 @@
 using AzSessions, AzStorage, CloudSeis, Dates, Distributed, FolderStorage, HTTP, JSON, Random, Test, UUIDs
 
+if !Sys.iswindows()
+    using CvxCompress
+end
+
 global session
 if haskey(ENV, "CLIENT_ID") && haskey(ENV, "CLIENT_SECRET") && haskey(ENV, "CLIENT_ID")
     AzSessions.write_manifest(;client_id=ENV["CLIENT_ID"], client_secret=ENV["CLIENT_SECRET"], tenant=ENV["TENANT_ID"])
@@ -56,7 +60,7 @@ function csopen_robust(containers, mode; kwargs...)
 end
 
 const clouds = (Azure, Azure2, POSIX)
-const compressors = ("none","blosc","leftjustify","zfp","cvx")
+const compressors = Sys.iswindows() ? ("none","blosc","leftjustify","zfp") : ("none","blosc","leftjustify","zfp","cvx")
 
 @testset "CloudSeis, cloud=$cloud, compresser=$compressor" for cloud in clouds, compressor in compressors
     if compressor == "cvx"
@@ -656,6 +660,11 @@ const compressors = ("none","blosc","leftjustify","zfp","cvx")
         io = csopen(mkcontainer(cloud, "test-$r-cs"))
         addprocs(5)
         @everywhere using AzStorage, CloudSeis, FolderStorage
+
+        if !Sys.iswindows()
+            @everywhere using CvxCompress
+        end
+
         reduce(io; frames_per_extent=10)
         rmprocs(workers())
         close(io)
@@ -701,6 +710,11 @@ const compressors = ("none","blosc","leftjustify","zfp","cvx")
 
         addprocs(2)
         @everywhere using AzStorage,FolderStorage,CloudSeis
+
+        if !Sys.iswindows()
+            @everywhere using CvxCompress
+        end
+
         cp(io, c)
         rmprocs(workers())
 
