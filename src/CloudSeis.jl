@@ -1519,6 +1519,7 @@ hdrs = readframehdrs(io,1)
 hdr = @view hdrs[:,1]
 get(prop(io, "TRACE"), hdr)
 close(io)
+```
 """
 function Base.get(prop::TraceProperty{T}, hdr::AbstractVector{UInt8}) where {T<:Number}
     iohdr = IOBuffer(hdr, read=true)
@@ -1544,6 +1545,7 @@ io = csopen(container)
 hdrs = readframehdrs(io, 1)
 get(prop(io, "TRACE"), hdrs, 1)
 close(io)
+```
 """
 Base.get(prop::TraceProperty, hdrs::AbstractArray{UInt8,2}, i::Integer) = get(prop, @view(hdrs[:,i]))
 
@@ -1560,6 +1562,7 @@ hdrs = readframehdrs(io, 1)
 hdr = @view hdrs[:,1]
 set!(prop(io, "TRACE"), hdr, 1)
 close(io)
+```
 """
 function TeaSeis.set!(prop::TraceProperty{T}, hdr::AbstractArray{UInt8,1}, value) where {T}
     iohdr = IOBuffer(hdr, read=true, write=true)
