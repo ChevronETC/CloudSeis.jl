@@ -263,7 +263,7 @@ Please see the **reference** section of this documentation for more information.
 # Trace Properties
 
 The CloudSeis data format does not specify any trace properties.  However, there
-are commonly used (<b>stock</b>) properties (see `src/stockprops.jl`).  It is
+are commonly used (**stock**) properties (see `src/stockprops.jl`).  It is
 unusual when a stock property does not suit your needs.  But, if need be, you
 can define a custom property using the `TracePropertyDef` constructor:
 
@@ -273,7 +273,7 @@ pdef = TracePropertyDef("label", "description", Vector{Float32}, 2)
 ```
 
 The arguments to `TracePropertyDef` are the `label`, `description`, `type`, and,
-optionally, the <b>number of elements</b> stored in the property. The stock
+optionally, the **number of elements** stored in the property. The stock
 properties are defined in `src/stockprops.jl` using a Julia
 dictionary: `stockprop`.  For example, access a stock definition for the `TRACE`
 property:
@@ -363,8 +363,8 @@ I would recommend that this functionality be put into a separate package.
 
 For convenience and consistency, we supply several dictionaries.  In addition to
 the dictionary for trace property definitions and trace type (both described above),
-there are dictionaries for <b>data domain</b> `stockdomain`, <b>units</b>
-`stockunit`, and <b>data type</b> `stockdatatype`.  All of these are listed in
+there are dictionaries for **data domain** `stockdomain`, **units**
+`stockunit`, and **data type** `stockdatatype`.  All of these are listed in
 `src\stockprops.jl`.
 
 
