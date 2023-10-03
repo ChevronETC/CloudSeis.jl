@@ -2426,6 +2426,7 @@ ioout = csopen(AzContainer("mydataset-out-cs";storageaccount="mystorageaccount")
 hdrsin = readframehdrs(ioin, 1)
 hdrsout = allocframehdrs(ioout)
 copy!(ioout, hdrsout, ioin, hdrsin)
+```
 """
 function Base.copy!(ioout::CSeis, hdrsout::AbstractArray{UInt8,2}, ioin::CSeis, hdrsin::AbstractArray{UInt8,2})
     for trcpropout in ioout.traceproperties
