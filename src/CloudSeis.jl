@@ -462,18 +462,17 @@ function csopen_read(containers::Vector{<:Container}, mode)
     csopen_from_description(containers, mode, description, traceproperties)
 end
 
-function make_extents(containers::Vector{C}, nextents, foldername, nominal_frames_per_extent, remaining_frames) where {C<:Container}
+function make_extents(containers::Vector{C}, nextents, foldername, nominal_frames_per_extent, remaining_frames; last_container_index=0, last_extent_index=0, lastframe=0) where {C<:Container}
     extents = Vector{Extent{C}}(undef, nextents)
-    k = 1
-    l = ceil(Int, log10(nextents))
-    lastframe = 0
+    k = last_container_index == length(containers) ? 1 : last_container_index + 1
+    l = ceil(Int, log10(last_extent_index + nextents))
     for iextent = 1:nextents
         firstframe = lastframe + 1
         lastframe = firstframe + nominal_frames_per_extent
         if iextent > remaining_frames
             lastframe -= 1
         end
-        extents[iextent] = Extent("$foldername/extent-$(lpad(iextent,l,'0'))", containers[k], firstframe:lastframe)
+        extents[iextent] = Extent("$foldername/extent-$(lpad(last_extent_index + iextent,l,'0'))", containers[k], firstframe:lastframe)
         k = k == length(containers) ? 1 : k + 1
     end
     extents
@@ -2182,6 +2181,75 @@ function Base.empty!(io::CSeis)
     end
 end
 
+function description_axis_lengths!(io, description, axis_lengths)
+    old_axis_lengths = size(io)
+    if length(old_axis_lengths) != length(axis_lengths)
+        error("mismatch between dataset dimension and 'axis_lengths' parameter")
+    end
+    for idim = 1:ndims(io)-1
+        if old_axis_lengths[idim] != axis_lengths[idim]
+            error("unable to mutate the first $(ndims(io)-1) dimensions")
+        end
+    end
+    if prod(axis_lengths[3:end]) < prod(old_axis_lengths[3:end])
+        error("'axis_lengths' must contain more frames (2D slices) than the dataset")
+    end
+
+    nominal_frames_per_extent = length(io.extents[1].frameindices)
+    delta_frames = prod(axis_lengths[3:end]) - prod(old_axis_lengths[3:end])
+    nextents = max(div(delta_frames, nominal_frames_per_extent), 1)
+    nominal_frames_per_extent,remaining_frames = divrem(delta_frames, nextents)
+
+    foldername = join(split(io.extents[end].name, '/')[1:end-1], '/')
+
+    all_containers = [io.extents[1].container]
+    for iextent in 2:length(io.extents)
+        io.extents[iextent].container ∈ all_containers && break
+        push!(all_containers, io.extents[iextent].container)
+    end
+
+    last_container_index = findfirst(container->container == io.extents[end].container, all_containers)
+    last_container_index === nothing && error("unable to find the last container index.")
+
+    lastframe = io.extents[end].frameindices[end]
+
+    last_extent_index = 0
+    for extent in io.extents
+        _last_extent_index = parse(Int, split(splitpath(extent.name)[2], '-')[end])
+        if _last_extent_index > last_extent_index
+            last_extent_index = _last_extent_index
+        end
+    end
+
+    new_extents = make_extents(all_containers, nextents, foldername, nominal_frames_per_extent, remaining_frames; last_container_index, last_extent_index, lastframe)
+    description["extents"] = [description["extents"]..., Dict.(new_extents)...]
+    description["fileproperties"]["axis_lengths"] = axis_lengths
+end
+
+"""
+    description!(io::CSeis, kwargs...)
+
+Limited mutation of the properties of an existing CloudSeis dataset.
+
+# Optional key-word arguments
+* `axis_lengths = nothing`  Grow the size of the axis lengths (3rd dimension and higher)[1].
+
+# Notes
+* [1] `axis_lengths` must be the same length as `size(io)`.  In addition, `prod(axis_lengths[3:end])`
+must be greater than `prod(size(io)[3:end])` and `axis_lengths[i]` must equal `size(io,i)` for i∈(1..ndims(io)-1).
+"""
+function description!(io::CSeis; axis_lengths=nothing)
+    io.mode == "r+" || error("mutation is only availabe for data-sets open in 'r+' mode.")
+
+    description = JSON.parse(read(joinpath(io.containers[1], "description.json"), String))
+
+    if axis_lengths !== nothing
+        description_axis_lengths!(io, description, axis_lengths)
+    end
+
+    write(io.containers[1], "description.json", json(description, 1))
+end
+
 function cp_extent(iextent, src_extent, dst_extent, nextents)
     if isfile(src_extent.container, src_extent.name)
         _filesize = filesize(src_extent.container, src_extent.name) / 1000 / 1000
@@ -2455,6 +2523,7 @@ allocframehdrs,
 cache,
 cache!,
 dataproperty,
+description!,
 domains,
 fold,
 fold!,
