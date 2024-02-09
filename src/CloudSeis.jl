@@ -53,9 +53,9 @@ struct Geometry
     wx::Float64
     wy::Float64
     wz::Float64
-    x_orientation::String
-    y_orientation::String
-    z_orientation::String
+    x_direction::String
+    y_direction::String
+    z_direction::String
     sample_order::String
     tti_azimuth_positive_direction::String
     tti_azimuth_origin_axis::String
@@ -78,13 +78,15 @@ space.
 * `u1=1,un=2` integer end-points (u axis) that can be used to describe a grid (e.g. for finite difference)
 * `v1=1,vn=2` integer end-points (v axis) that can be used to describe a grid (e.g. for finite difference)
 * `w1=1,wn=2` integer end-points (w axis) that can be used to describe a grid (e.g. for finite difference)
+* `x_direction="east"` compass direction that 'x' is parallel to
+* `y_direction="north"` compass direction that 'y' is parallel to
+* `z_direction="depth"` compass direction that 'z' is parallel to
 * `sample_order="uvw"` The order that the samples are stored on disk.  For example, "uvw" means that 'u' is the fastest dimension and 'w' is the slowest dimension (choose from "uvw", "uwv", "vuw", "vwu", "wuv", "wvu" and "unkown")
 * `tti_azimuth_positive_direction="counter clockwise"` for TTI models, define the orientation of the azimuth ("clockwise", "counter clockwise" or "unknown")
 * `tti_azimuth_origin_axis="v"` for TTI models, define the axis from which azimuth is measured and at which azimuth is 0 (choose from: "u", "v", "w", "x", "y", "-u", "-v", "-w", "-x", "-y" or "unknown")
 
 # notes
 * this method does not check to see if the u,v,w vectors are orthogonal
-* in general, one might associate 'x' with 'east' and 'y' with north
 * for models that do not required azimuthal anisotropy (e.g. isotropic, VTI), it is convenient to set `tti_azimumth_positive_direction` and `tti_azimuth_origin_axis` to "unknown"
 """
 function Geometry(;
