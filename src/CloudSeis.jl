@@ -34,31 +34,6 @@ DataProperty(dataproperty::Dict) = DataProperty(first(keys(dataproperty)), first
 
 include("stockprops.jl")
 
-
-struct AzimuthOrientation
-    # Struct to hold information about the azimuth angles in TTI symnmetry. 
-    # The rotation property describes if angles are measured clockwise (CW) or counter clockwise (CCW)
-    # The from_axis property describes which axis the angles are measured from.  
-    rotation::String 
-    from_axis::String
-end
-
-function AzimuthOrientation(;
-    rotation = "CW", 
-    from_axis= "N"
-    )
-
-    if rotation ∉ ["CCW", "CW"]
-        error("The rotation must be counter clockwise (CCW) or clockwise (CW)")
-    end
-
-    if from_axis ∉ ["N","E","S","W","-V","+V","-W","+W"]
-        error("\tAngles in global coordinates must be measured from one of the Cardinal Directions (N,E,S,W).\n\tAngles in local coordinates must be measured from one of the local axes (-V,+V,-U,+U).")
-    end
-
-    AzimuthOrientation(rotation,from_axis)
-end
-
 struct Geometry
     u1::Int
     un::Int
@@ -78,10 +53,37 @@ struct Geometry
     wx::Float64
     wy::Float64
     wz::Float64
-    symmetry::Union{Nothing,String}
-    azmth::Union{Nothing,AzimuthOrientation}
+    sample_order::String
+    tti_azimuth_positive_direction::String
+    tti_azimuth_origin_axis::String
 end
 
+"""
+    g = Geometry([;kwargs...])
+
+Returns a geometry object associated with the CloudSeis data-set.  This includes an origin (`o`)
+and three orthogonal vectors (`u`,`v`,`w`).  In addition, one can specify how azimuth is defined
+for TTI earth models by giving a specific direction for positive azimuth, and the axis from which
+it is measured.  This can be useful when describing the orientation of a model in three dimensional
+space.
+
+# key-word arguments
+* `ox=0,oy=0,oz=0` grid origin
+* `ux=0,uy=0,uz=1` u vector such that the end of the u axis is at the point (ox+ux,oy+uy,oz+uz)
+* `vx=0,vy=0,vz=1` v vector such that the end of the u axis is at the point (ox+vx,oy+vy,oz+vz)
+* `wx=0,wy=0,wz=1` w vector such that the end of the u axis is at the point (ox+wx,oy+wy,oz+wz)
+* `u1=1,un=2` integer end-points (u axis) that can be used to describe a grid (e.g. for finite difference)
+* `v1=1,vn=2` integer end-points (v axis) that can be used to describe a grid (e.g. for finite difference)
+* `w1=1,wn=2` integer end-points (w axis) that can be used to describe a grid (e.g. for finite difference)
+* `sample_order="uvw"` The order that the samples are stored on disk.  For example, "uvw" means that 'u' is the fastest dimension and 'w' is the slowest dimension (choose from "uvw", "uwv", "vuw", "vwu", "wuv", "wvu" and "unkown")
+* `tti_azimuth_positive_direction="counter clockwise"` for TTI models, define the orientation of the azimuth ("clockwise", "counter clockwise" or "unknown")
+* `tti_azimuth_origin_axis="v"` for TTI models, define the axis from which azimuth is measured and at which azimuth is 0 (choose from: "u", "v", "w", "x", "y", "-u", "-v", "-w", "-x", "-y" or "unknown")
+
+# notes
+* this method does not check to see if the u,v,w vectors are orthogonal
+* in general, one might associate 'x' with 'east' and 'y' with north
+* for models that do not required azimuthal anisotropy (e.g. isotropic, VTI), it is convenient to set `tti_azimumth_positive_direction` and `tti_azimuth_origin_axis` to "unknown"
+"""
 function Geometry(;
         ox=0.0,oy=0.0,oz=0.0,
         ux=1.0,uy=0.0,uz=0.0,
@@ -90,18 +92,12 @@ function Geometry(;
         u1=1,un=2,
         v1=1,vn=2,
         w1=1,wn=2,
-        symmetry="TTI",
-        azmth=AzimuthOrientation(rotation="CW",from_axis="N"))
-
-        if symmetry === nothing
-            @warn("No symmetry set in the geometry file")
-        end 
-
-        if symmetry === "TTI" && azmth === nothing 
-            error("TTI systems must define the azimuth rotation (CCW or CW) and the axis the rotation is defined relative to.")
-        end
-
-        Geometry(u1,un,v1,vn,w1,wn,ox,oy,oz,ux,uy,uz,vx,vy,vz,wx,wy,wz,symmetry,azmth)
+        sample_order = "uvw",
+        tti_azimuth_positive_direction = "counter clockwise",
+        tti_azimuth_origin_axis = "x")
+    tti_azimuth_positive_direction ∈ ("clockwise", "counter clockwise", "unknown") || error("'tti_azimuth_rotation' must be one of (\"clockwise\",\"counter clockwise\", \"unknown\")")
+    tti_azimuth_origin_axis ∈ ("x", "-x", "y", "-y", "u", "-u", "v", "-v", "w", "-w", "unknown") || error("'tti_azimuth_oigin_axis' must be one of (\"x\", \"-x\", \"y\", \"-y\", \"u\", \"-u\", \"v\", \"-v\", \"w\", \"-w\", \"unknown\")")
+    Geometry(u1,un,v1,vn,w1,wn,ox,oy,oz,ux,uy,uz,vx,vy,vz,wx,wy,wz,sample_order,tti_azimuth_positive_direction,tti_azimuth_origin_axis)
 end
 
 Base.Dict(g::Geometry) = Dict(
@@ -112,8 +108,8 @@ Base.Dict(g::Geometry) = Dict(
     "u1"=>g.u1, "un"=>g.un,
     "v1"=>g.v1, "vn"=>g.vn,
     "w1"=>g.w1, "wn"=>g.wn,
-    "symmetry" => g.symmetry,
-    "azmth"=>g.azmth)
+    "tti_azimuth_positive_direction"=>g.tti_azimuth_positive_direction,
+    "tti_azimuth_origin_axis"=>g.tti_azimuth_origin_axis)
 
 struct Extent{C<:Container}
     name::String
@@ -863,6 +859,19 @@ function get_data_properties(description::Dict)
     NamedTuple{names}(_values)
 end
 
+function get_sample_order(description::Dict)
+    pdefs = description["fileproperties"]
+    pdefs == ["IU", "IV", "IW"] && (return "uvw")
+    pdefs == ["IU", "IW", "IV"] && (return "uwv")
+    pdefs == ["IV", "IU", "IW"] && (return "vuw")
+    pdefs == ["IV", "IW", "IU"] && (return "vwu")
+    pdefs == ["IW", "IU", "IV"] && (return "wuv")
+    pdefs == ["IW", "IV", "IU"] && (return "wvu")
+
+    @warn "unknown model order. use `propdefs(io)=(stockprop[:IU],stockprop[:IV],stockprop[:IW])` or some permutation there-of to define order"
+    return "unknown"
+end
+
 function get_geometry(description::Dict)
     if "geometry" ∉ keys(description)
         return nothing
@@ -870,39 +879,13 @@ function get_geometry(description::Dict)
 
     c = description["geometry"]
 
-    if "symmetry" ∉ keys(c)
-        # Isotropic or models without symmetry and azimuth defined  
-
-        Geometry(
-            c["u1"],c["un"],c["v1"],c["vn"],c["w1"],c["wn"],
-            c["ox"],c["oy"],c["oz"],c["ux"],c["uy"],c["uz"],
-            c["vx"],c["vy"],c["vz"],c["wx"],c["wy"],c["wz"],
-            nothing,nothing)
-    elseif "symmetry" ∈ keys(c) && "azmth" ∉ keys(c) 
-        # VTI 
-        Geometry(
-            c["u1"],c["un"],c["v1"],c["vn"],c["w1"],c["wn"],
-            c["ox"],c["oy"],c["oz"],c["ux"],c["uy"],c["uz"],
-            c["vx"],c["vy"],c["vz"],c["wx"],c["wy"],c["wz"],
-            c["symmetry"],nothing)
-    elseif "symmetry" ∈ keys(c)&& "azmth" ∈ keys(c) 
-        # TTI
-        # Annoyance due to discrepancy in behavior of cscreate and csopen methods
-        if typeof(c["azmth"]) <: AzimuthOrientation
-            Geometry(
-                c["u1"],c["un"],c["v1"],c["vn"],c["w1"],c["wn"],
-                c["ox"],c["oy"],c["oz"],c["ux"],c["uy"],c["uz"],
-                c["vx"],c["vy"],c["vz"],c["wx"],c["wy"],c["wz"],
-                c["symmetry"],c["azmth"])
-        elseif typeof(c["azmth"]) <: Dict
-            Geometry(
-                c["u1"],c["un"],c["v1"],c["vn"],c["w1"],c["wn"],
-                c["ox"],c["oy"],c["oz"],c["ux"],c["uy"],c["uz"],
-                c["vx"],c["vy"],c["vz"],c["wx"],c["wy"],c["wz"],
-                c["symmetry"],AzimuthOrientation(rotation=c["azmth"]["rotation"],from_axis=c["azmth"]["from_axis"]))
-        end
-
-    end
+    Geometry(
+        c["u1"],c["un"],c["v1"],c["vn"],c["w1"],c["wn"],
+        c["ox"],c["oy"],c["oz"],c["ux"],c["uy"],c["uz"],
+        c["vx"],c["vy"],c["vz"],c["wx"],c["wy"],c["wz"],
+        get_sample_order(description),
+        haskey(c, "tti_azimuth_positive_direction") ? c["tti_azimuth_positive_direction"] : "unknown",
+        haskey(c, "tti_azimuth_origin_axis") ? c["tti_azimuth_origin_axis"] : "unknown")
 end
 
 function stringtype2type(format::AbstractString, elementcount=1)
@@ -2504,20 +2487,7 @@ TeaSeis.domains(io::CSeis) = io.axis_domains
 Return the geometry (if any) associated with the
 CloudSeis data-set.
 """
-function TeaSeis.geometry(io::CSeis) 
-    if propdefs(io,1) === stockprop[:IU] && propdefs(io,2) === stockprop[:IV] && propdefs(io,3) === stockprop[:IW]
-        modelorder = :UVW
-    elseif propdefs(io,1) === stockprop[:IU] && propdefs(io,2) === stockprop[:IU] && propdefs(io,3) === stockprop[:IV]
-        modelorder = :UWV
-    else
-        @warn "Model io.axis_propdefs should be defined in (IU,IV,IW,:) to discern model ordering. \n They are currently set as ($(propdefs(io,1).label),$(propdefs(io,2).label),$(propdefs(io,3).label),:)"
-        modelorder = :UNDEFINED
-    end
-
-    g = io.geometry
-    
-    return (;g, modelorder) 
-end
+TeaSeis.geometry(io::CSeis) = io.geometry
 
 """
     in(propdef::TracePropertyDef, io::CSeis)
@@ -2596,7 +2566,6 @@ function Base.copy!(ioout::CSeis, hdrsout::AbstractArray{UInt8,2}, ioin::CSeis, 
 end
 
 export
-AzimuthOrientation,
 LogicalIndices,
 DataProperty,
 Geometry,
