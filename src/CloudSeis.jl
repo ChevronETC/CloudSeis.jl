@@ -53,6 +53,9 @@ struct Geometry
     wx::Float64
     wy::Float64
     wz::Float64
+    x_orientation::String
+    y_orientation::String
+    z_orientation::String
     sample_order::String
     tti_azimuth_positive_direction::String
     tti_azimuth_origin_axis::String
@@ -92,9 +95,15 @@ function Geometry(;
         u1=1,un=2,
         v1=1,vn=2,
         w1=1,wn=2,
+        x_direction = "east",
+        y_direction = "north",
+        z_direction = "depth",
         sample_order = "uvw",
         tti_azimuth_positive_direction = "counter clockwise",
         tti_azimuth_origin_axis = "x")
+    x_direction ∈ ("east", "north", "depth", "-east", "-north", "-depth", "unknown") || error("'x_direction' must be one of (\"east\", \"north\", \"depth\", \"-east\", \"-north\", \"-depth\", \"unknown\")")
+    y_direction ∈ ("east", "north", "depth", "-east", "-north", "-depth", "unknown") || error("'y_direction' must be one of (\"east\", \"north\", \"depth\", \"-east\", \"-north\", \"-depth\", \"unknown\")")
+    z_direction ∈ ("east", "north", "depth", "-east", "-north", "-depth", "unknown") || error("'z_direction' must be one of (\"east\", \"north\", \"depth\", \"-east\", \"-north\", \"-depth\", \"unknown\")")
     tti_azimuth_positive_direction ∈ ("clockwise", "counter clockwise", "unknown") || error("'tti_azimuth_rotation' must be one of (\"clockwise\",\"counter clockwise\", \"unknown\")")
     tti_azimuth_origin_axis ∈ ("x", "-x", "y", "-y", "u", "-u", "v", "-v", "w", "-w", "unknown") || error("'tti_azimuth_oigin_axis' must be one of (\"x\", \"-x\", \"y\", \"-y\", \"u\", \"-u\", \"v\", \"-v\", \"w\", \"-w\", \"unknown\")")
     Geometry(u1,un,v1,vn,w1,wn,ox,oy,oz,ux,uy,uz,vx,vy,vz,wx,wy,wz,sample_order,tti_azimuth_positive_direction,tti_azimuth_origin_axis)
@@ -108,6 +117,10 @@ Base.Dict(g::Geometry) = Dict(
     "u1"=>g.u1, "un"=>g.un,
     "v1"=>g.v1, "vn"=>g.vn,
     "w1"=>g.w1, "wn"=>g.wn,
+    "x_direction"=>g.x_direction,
+    "y_direction"=>g.y_direction,
+    "z_direction"=>g.z_direction,
+    "sample_order"=>g.sample_order,
     "tti_azimuth_positive_direction"=>g.tti_azimuth_positive_direction,
     "tti_azimuth_origin_axis"=>g.tti_azimuth_origin_axis)
 
@@ -883,6 +896,9 @@ function get_geometry(description::Dict)
         c["u1"],c["un"],c["v1"],c["vn"],c["w1"],c["wn"],
         c["ox"],c["oy"],c["oz"],c["ux"],c["uy"],c["uz"],
         c["vx"],c["vy"],c["vz"],c["wx"],c["wy"],c["wz"],
+        haskey(c, "x_direction") ? c["x_direction"] : "unknown",
+        haskey(c, "y_direction") ? c["y_direction"] : "unknown",
+        haskey(c, "z_direction") ? c["z_direction"] : "unknown",
         get_sample_order(description),
         haskey(c, "tti_azimuth_positive_direction") ? c["tti_azimuth_positive_direction"] : "unknown",
         haskey(c, "tti_azimuth_origin_axis") ? c["tti_azimuth_origin_axis"] : "unknown")
