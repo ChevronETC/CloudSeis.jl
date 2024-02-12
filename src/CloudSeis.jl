@@ -57,7 +57,7 @@ struct Geometry
     y_direction::String
     z_direction::String
     sample_order::String
-    tti_azimuth_positive_direction::String
+    handedness::String
     tti_azimuth_origin_axis::String
 end
 
@@ -82,7 +82,7 @@ space.
 * `y_direction="north"` compass direction that 'y' is parallel to
 * `z_direction="depth"` compass direction that 'z' is parallel to
 * `sample_order="uvw"` The order that the samples are stored on disk.  For example, "uvw" means that 'u' is the fastest dimension and 'w' is the slowest dimension (choose from "uvw", "uwv", "vuw", "vwu", "wuv", "wvu" and "unkown")
-* `tti_azimuth_positive_direction="counter clockwise"` for TTI models, define the orientation of the azimuth ("clockwise", "counter clockwise" or "unknown")
+* `handedness="right"` for TTI models, define the handedness of the coordinate system ("right", "left" or "unknown"). This also encapsulates the sense of positive rotation, for example in right handed systems, positive curl is counter clockwise.  
 * `tti_azimuth_origin_axis="v"` for TTI models, define the axis from which azimuth is measured and at which azimuth is 0 (choose from: "u", "v", "w", "x", "y", "-u", "-v", "-w", "-x", "-y" or "unknown")
 
 # notes
@@ -101,14 +101,14 @@ function Geometry(;
         y_direction = "north",
         z_direction = "depth",
         sample_order = "uvw",
-        tti_azimuth_positive_direction = "counter clockwise",
+        handedness = "right",
         tti_azimuth_origin_axis = "x")
     x_direction ∈ ("east", "north", "depth", "-east", "-north", "-depth", "unknown") || error("'x_direction' must be one of (\"east\", \"north\", \"depth\", \"-east\", \"-north\", \"-depth\", \"unknown\")")
     y_direction ∈ ("east", "north", "depth", "-east", "-north", "-depth", "unknown") || error("'y_direction' must be one of (\"east\", \"north\", \"depth\", \"-east\", \"-north\", \"-depth\", \"unknown\")")
     z_direction ∈ ("east", "north", "depth", "-east", "-north", "-depth", "unknown") || error("'z_direction' must be one of (\"east\", \"north\", \"depth\", \"-east\", \"-north\", \"-depth\", \"unknown\")")
-    tti_azimuth_positive_direction ∈ ("clockwise", "counter clockwise", "unknown") || error("'tti_azimuth_rotation' must be one of (\"clockwise\",\"counter clockwise\", \"unknown\")")
+    handedness ∈ ("right", "left", "unknown") || error("'handedness' must be one of (\"right\",\"left\", \"unknown\")")
     tti_azimuth_origin_axis ∈ ("x", "-x", "y", "-y", "u", "-u", "v", "-v", "w", "-w", "unknown") || error("'tti_azimuth_oigin_axis' must be one of (\"x\", \"-x\", \"y\", \"-y\", \"u\", \"-u\", \"v\", \"-v\", \"w\", \"-w\", \"unknown\")")
-    Geometry(u1,un,v1,vn,w1,wn,ox,oy,oz,ux,uy,uz,vx,vy,vz,wx,wy,wz,sample_order,tti_azimuth_positive_direction,tti_azimuth_origin_axis)
+    Geometry(u1,un,v1,vn,w1,wn,ox,oy,oz,ux,uy,uz,vx,vy,vz,wx,wy,wz,sample_order,handedness,tti_azimuth_origin_axis)
 end
 
 Base.Dict(g::Geometry) = Dict(
@@ -123,7 +123,7 @@ Base.Dict(g::Geometry) = Dict(
     "y_direction"=>g.y_direction,
     "z_direction"=>g.z_direction,
     "sample_order"=>g.sample_order,
-    "tti_azimuth_positive_direction"=>g.tti_azimuth_positive_direction,
+    "handedness"=>g.handedness,
     "tti_azimuth_origin_axis"=>g.tti_azimuth_origin_axis)
 
 struct Extent{C<:Container}
@@ -902,7 +902,7 @@ function get_geometry(description::Dict)
         haskey(c, "y_direction") ? c["y_direction"] : "unknown",
         haskey(c, "z_direction") ? c["z_direction"] : "unknown",
         get_sample_order(description),
-        haskey(c, "tti_azimuth_positive_direction") ? c["tti_azimuth_positive_direction"] : "unknown",
+        haskey(c, "handedness") ? c["handedness"] : "unknown",
         haskey(c, "tti_azimuth_origin_axis") ? c["tti_azimuth_origin_axis"] : "unknown")
 end
 
