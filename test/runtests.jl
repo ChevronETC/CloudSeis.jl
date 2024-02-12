@@ -489,7 +489,9 @@ const compressors = ("none","blosc","leftjustify","zfp","cvx")
         rm(io)
     end
 
-    @testset "geometry" begin
+    @testset "geometry" begin # directions set 
+
+        # Test setting of geometry 
         g = Geometry(
             ox=1.0,oy=2.0,oz=3.0,
             ux=4.0,uy=5.0,uz=6.0,
@@ -497,7 +499,13 @@ const compressors = ("none","blosc","leftjustify","zfp","cvx")
             wx=10.0,wy=11.0,wz=12.0,
             u1=1,un=2,
             v1=3,vn=4,
-            w1=5,wn=6)
+            w1=5,wn=6,
+            x_direction="east",
+            y_direction="north",
+            z_direction="depth",
+            sample_order="uvw",
+            handedness="right",
+            tti_azimuth_origin_axis="x")
         r = uuid4()
         io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], geometry=g, compressor=compressor, compressor_options=compressor_options)
 
@@ -520,9 +528,17 @@ const compressors = ("none","blosc","leftjustify","zfp","cvx")
         @test g.vn == 4
         @test g.w1 == 5
         @test g.wn == 6
+        @test g.x_direction == "east"
+        @test g.y_direction == "north"
+        @test g.z_direction == "depth"
+        @test g.sample_order == "uvw"
+        @test g.handedness == "right"
+        @test g.tti_azimuth_origin_axis == "x"
+
 
         close(io)
         rm(io)
+        
     end
 
     @testset "in" begin

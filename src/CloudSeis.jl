@@ -107,8 +107,8 @@ function Geometry(;
     y_direction ∈ ("east", "north", "depth", "-east", "-north", "-depth", "unknown") || error("'y_direction' must be one of (\"east\", \"north\", \"depth\", \"-east\", \"-north\", \"-depth\", \"unknown\")")
     z_direction ∈ ("east", "north", "depth", "-east", "-north", "-depth", "unknown") || error("'z_direction' must be one of (\"east\", \"north\", \"depth\", \"-east\", \"-north\", \"-depth\", \"unknown\")")
     handedness ∈ ("right", "left", "unknown") || error("'handedness' must be one of (\"right\",\"left\", \"unknown\")")
-    tti_azimuth_origin_axis ∈ ("x", "-x", "y", "-y", "u", "-u", "v", "-v", "w", "-w", "unknown") || error("'tti_azimuth_oigin_axis' must be one of (\"x\", \"-x\", \"y\", \"-y\", \"u\", \"-u\", \"v\", \"-v\", \"w\", \"-w\", \"unknown\")")
-    Geometry(u1,un,v1,vn,w1,wn,ox,oy,oz,ux,uy,uz,vx,vy,vz,wx,wy,wz,sample_order,handedness,tti_azimuth_origin_axis)
+    tti_azimuth_origin_axis ∈ ("x", "-x", "y", "-y", "u", "-u", "v", "-v", "w", "-w", "unknown") || error("'tti_azimuth_origin_axis' must be one of (\"x\", \"-x\", \"y\", \"-y\", \"u\", \"-u\", \"v\", \"-v\", \"w\", \"-w\", \"unknown\")")
+    Geometry(u1,un,v1,vn,w1,wn,ox,oy,oz,ux,uy,uz,vx,vy,vz,wx,wy,wz,x_direction,y_direction,z_direction,sample_order,handedness,tti_azimuth_origin_axis)
 end
 
 Base.Dict(g::Geometry) = Dict(
