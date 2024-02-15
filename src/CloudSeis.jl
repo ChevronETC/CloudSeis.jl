@@ -81,7 +81,6 @@ space.
 * `x_direction="east"` compass direction that 'x' is parallel to
 * `y_direction="north"` compass direction that 'y' is parallel to
 * `z_direction="depth"` compass direction that 'z' is parallel to
-* `sample_order="uvw"` The order that the samples are stored on disk.  For example, "uvw" means that 'u' is the fastest dimension and 'w' is the slowest dimension (choose from "uvw", "uwv", "vuw", "vwu", "wuv", "wvu" and "unkown")
 * `handedness="right"` for TTI models, define the handedness of the coordinate system ("right", "left" or "unknown"). This also encapsulates the sense of positive rotation, for example in right handed systems, positive curl is counter clockwise.  
 * `tti_azimuth_origin_axis="v"` for TTI models, define the axis from which azimuth is measured and at which azimuth is 0 (choose from: "u", "v", "w", "x", "y", "-u", "-v", "-w", "-x", "-y" or "unknown")
 
@@ -100,7 +99,7 @@ function Geometry(;
         x_direction = "east",
         y_direction = "north",
         z_direction = "depth",
-        sample_order = "uvw",
+        sample_order = "unknown",
         handedness = "right",
         tti_azimuth_origin_axis = "x")
     x_direction ∈ ("east", "north", "depth", "-east", "-north", "-depth", "unknown") || error("'x_direction' must be one of (\"east\", \"north\", \"depth\", \"-east\", \"-north\", \"-depth\", \"unknown\")")
@@ -875,7 +874,8 @@ function get_data_properties(description::Dict)
 end
 
 function get_sample_order(description::Dict)
-    pdefs = description["fileproperties"]
+    pdefs = description["fileproperties"]["axis_propdefs"][1:3]
+    @info pdefs
     pdefs == ["IU", "IV", "IW"] && (return "uvw")
     pdefs == ["IU", "IW", "IV"] && (return "uwv")
     pdefs == ["IV", "IU", "IW"] && (return "vuw")
@@ -894,6 +894,14 @@ function get_geometry(description::Dict)
 
     c = description["geometry"]
 
+    sample_order = haskey(c,"sample_order") ? c["sample_order"] : "unknown"
+    
+    if sample_order !== "unknown" && sample_order !== get_sample_order(description)
+        error("Sample order defined in CloudSeis model description.json ($sample_order) and the sample order inferred from the axis definitions $(get_sample_order(description)) do not agree.")
+    else
+        sample_order = get_sample_order(description)
+    end   
+
     Geometry(
         c["u1"],c["un"],c["v1"],c["vn"],c["w1"],c["wn"],
         c["ox"],c["oy"],c["oz"],c["ux"],c["uy"],c["uz"],
@@ -901,7 +909,7 @@ function get_geometry(description::Dict)
         haskey(c, "x_direction") ? c["x_direction"] : "unknown",
         haskey(c, "y_direction") ? c["y_direction"] : "unknown",
         haskey(c, "z_direction") ? c["z_direction"] : "unknown",
-        get_sample_order(description),
+        sample_order,
         haskey(c, "handedness") ? c["handedness"] : "unknown",
         haskey(c, "tti_azimuth_origin_axis") ? c["tti_azimuth_origin_axis"] : "unknown")
 end
