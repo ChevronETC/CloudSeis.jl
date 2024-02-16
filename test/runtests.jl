@@ -1,6 +1,7 @@
 using AzSessions, AzStorage, CloudSeis, Dates, Distributed, FolderStorage, HTTP, JSON, Random, Test, UUIDs
 
 # trigger extensions
+using Blosc
 if !Sys.iswindows()
     using CvxCompress
 end
@@ -661,7 +662,7 @@ const compressors = Sys.iswindows() ? ("none","blosc","leftjustify","zfp") : ("n
 
         io = csopen(mkcontainer(cloud, "test-$r-cs"))
         addprocs(5)
-        @everywhere using AzStorage, CloudSeis, FolderStorage, ZfpCompression
+        @everywhere using AzStorage, Blosc, CloudSeis, FolderStorage, ZfpCompression
 
         if !Sys.iswindows()
             @everywhere using CvxCompress
@@ -711,7 +712,7 @@ const compressors = Sys.iswindows() ? ("none","blosc","leftjustify","zfp") : ("n
         c = mkcontainer(cloud, "test-$r-cs")
 
         addprocs(2)
-        @everywhere using AzStorage,FolderStorage,CloudSeis,ZfpCompression
+        @everywhere using AzStorage, Blosc, CloudSeis, FolderStorage, ZfpCompression
 
         if !Sys.iswindows()
             @everywhere using CvxCompress
