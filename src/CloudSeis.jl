@@ -53,8 +53,41 @@ struct Geometry
     wx::Float64
     wy::Float64
     wz::Float64
+    x_direction::String
+    y_direction::String
+    z_direction::String
+    sample_order::String
+    handedness::String
+    tti_azimuth_origin_axis::String
 end
 
+"""
+    g = Geometry([;kwargs...])
+
+Returns a geometry object associated with the CloudSeis data-set.  This includes an origin (`o`)
+and three orthogonal vectors (`u`,`v`,`w`).  In addition, one can specify how azimuth is defined
+for TTI earth models by giving a specific direction for positive azimuth, and the axis from which
+it is measured.  This can be useful when describing the orientation of a model in three dimensional
+space.
+
+# key-word arguments
+* `ox=0,oy=0,oz=0` grid origin
+* `ux=0,uy=0,uz=1` u vector such that the end of the u axis is at the point (ox+ux,oy+uy,oz+uz)
+* `vx=0,vy=0,vz=1` v vector such that the end of the u axis is at the point (ox+vx,oy+vy,oz+vz)
+* `wx=0,wy=0,wz=1` w vector such that the end of the u axis is at the point (ox+wx,oy+wy,oz+wz)
+* `u1=1,un=2` integer end-points (u axis) that can be used to describe a grid (e.g. for finite difference)
+* `v1=1,vn=2` integer end-points (v axis) that can be used to describe a grid (e.g. for finite difference)
+* `w1=1,wn=2` integer end-points (w axis) that can be used to describe a grid (e.g. for finite difference)
+* `x_direction="east"` compass direction that 'x' is parallel to
+* `y_direction="north"` compass direction that 'y' is parallel to
+* `z_direction="depth"` compass direction that 'z' is parallel to
+* `handedness="right"` for TTI models, define the handedness of the coordinate system ("right", "left" or "unknown"). This also encapsulates the sense of positive rotation, for example in right handed systems, positive curl is counter clockwise.  
+* `tti_azimuth_origin_axis="v"` for TTI models, define the axis from which azimuth is measured and at which azimuth is 0 (choose from: "u", "v", "w", "x", "y", "-u", "-v", "-w", "-x", "-y" or "unknown")
+
+# notes
+* this method does not check to see if the u,v,w vectors are orthogonal
+* for models that do not required azimuthal anisotropy (e.g. isotropic, VTI), it is convenient to set `tti_azimumth_positive_direction` and `tti_azimuth_origin_axis` to "unknown"
+"""
 function Geometry(;
         ox=0.0,oy=0.0,oz=0.0,
         ux=1.0,uy=0.0,uz=0.0,
@@ -62,8 +95,19 @@ function Geometry(;
         wx=0.0,wy=0.0,wz=1.0,
         u1=1,un=2,
         v1=1,vn=2,
-        w1=1,wn=2)
-    Geometry(u1,un,v1,vn,w1,wn,ox,oy,oz,ux,uy,uz,vx,vy,vz,wx,wy,wz)
+        w1=1,wn=2,
+        x_direction = "east",
+        y_direction = "north",
+        z_direction = "depth",
+        sample_order = "unknown",
+        handedness = "right",
+        tti_azimuth_origin_axis = "x")
+    x_direction ∈ ("east", "north", "depth", "-east", "-north", "-depth", "unknown") || error("'x_direction' must be one of (\"east\", \"north\", \"depth\", \"-east\", \"-north\", \"-depth\", \"unknown\")")
+    y_direction ∈ ("east", "north", "depth", "-east", "-north", "-depth", "unknown") || error("'y_direction' must be one of (\"east\", \"north\", \"depth\", \"-east\", \"-north\", \"-depth\", \"unknown\")")
+    z_direction ∈ ("east", "north", "depth", "-east", "-north", "-depth", "unknown") || error("'z_direction' must be one of (\"east\", \"north\", \"depth\", \"-east\", \"-north\", \"-depth\", \"unknown\")")
+    handedness ∈ ("right", "left", "unknown") || error("'handedness' must be one of (\"right\",\"left\", \"unknown\")")
+    tti_azimuth_origin_axis ∈ ("x", "-x", "y", "-y", "u", "-u", "v", "-v", "w", "-w", "unknown") || error("'tti_azimuth_origin_axis' must be one of (\"x\", \"-x\", \"y\", \"-y\", \"u\", \"-u\", \"v\", \"-v\", \"w\", \"-w\", \"unknown\")")
+    Geometry(u1,un,v1,vn,w1,wn,ox,oy,oz,ux,uy,uz,vx,vy,vz,wx,wy,wz,x_direction,y_direction,z_direction,sample_order,handedness,tti_azimuth_origin_axis)
 end
 
 Base.Dict(g::Geometry) = Dict(
@@ -73,7 +117,13 @@ Base.Dict(g::Geometry) = Dict(
     "wx"=>g.wx, "wy"=>g.wy, "wz"=>g.wz,
     "u1"=>g.u1, "un"=>g.un,
     "v1"=>g.v1, "vn"=>g.vn,
-    "w1"=>g.w1, "wn"=>g.wn)
+    "w1"=>g.w1, "wn"=>g.wn,
+    "x_direction"=>g.x_direction,
+    "y_direction"=>g.y_direction,
+    "z_direction"=>g.z_direction,
+    "sample_order"=>g.sample_order,
+    "handedness"=>g.handedness,
+    "tti_azimuth_origin_axis"=>g.tti_azimuth_origin_axis)
 
 struct Extent{C<:Container}
     name::String
@@ -823,16 +873,45 @@ function get_data_properties(description::Dict)
     NamedTuple{names}(_values)
 end
 
+function get_sample_order(description::Dict)
+    pdefs = description["fileproperties"]["axis_propdefs"][1:3]
+    @info pdefs
+    pdefs == ["IU", "IV", "IW"] && (return "uvw")
+    pdefs == ["IU", "IW", "IV"] && (return "uwv")
+    pdefs == ["IV", "IU", "IW"] && (return "vuw")
+    pdefs == ["IV", "IW", "IU"] && (return "vwu")
+    pdefs == ["IW", "IU", "IV"] && (return "wuv")
+    pdefs == ["IW", "IV", "IU"] && (return "wvu")
+
+    @warn "unknown model order. use `propdefs(io)=(stockprop[:IU],stockprop[:IV],stockprop[:IW])` or some permutation there-of to define order"
+    return "unknown"
+end
+
 function get_geometry(description::Dict)
     if "geometry" ∉ keys(description)
         return nothing
     end
 
     c = description["geometry"]
+
+    sample_order = haskey(c,"sample_order") ? c["sample_order"] : "unknown"
+    
+    if sample_order !== "unknown" && sample_order !== get_sample_order(description)
+        error("Sample order defined in CloudSeis model description.json ($sample_order) and the sample order inferred from the axis definitions $(get_sample_order(description)) do not agree.")
+    else
+        sample_order = get_sample_order(description)
+    end   
+
     Geometry(
         c["u1"],c["un"],c["v1"],c["vn"],c["w1"],c["wn"],
         c["ox"],c["oy"],c["oz"],c["ux"],c["uy"],c["uz"],
-        c["vx"],c["vy"],c["vz"],c["wx"],c["wy"],c["wz"])
+        c["vx"],c["vy"],c["vz"],c["wx"],c["wy"],c["wz"],
+        haskey(c, "x_direction") ? c["x_direction"] : "unknown",
+        haskey(c, "y_direction") ? c["y_direction"] : "unknown",
+        haskey(c, "z_direction") ? c["z_direction"] : "unknown",
+        sample_order,
+        haskey(c, "handedness") ? c["handedness"] : "unknown",
+        haskey(c, "tti_azimuth_origin_axis") ? c["tti_azimuth_origin_axis"] : "unknown")
 end
 
 function stringtype2type(format::AbstractString, elementcount=1)
