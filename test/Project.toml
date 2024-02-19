@@ -1,4 +1,5 @@
 [deps]
+AbstractStorage = "14dbef02-f468-5f15-853e-5ec8dee7b899"
 AzSessions = "f239b30d-ae6b-58be-a2d5-7e9f30e280a9"
 AzStorage = "c6697862-1611-5eae-9ef8-48803c85c8d6"
 Blosc = "a74b3585-a348-5f62-a45c-50e91977d574"

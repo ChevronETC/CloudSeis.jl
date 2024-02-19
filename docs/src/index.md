@@ -359,6 +359,82 @@ the `u-axis` (e.g. cross-line axis), `(vx,vy,vz)` is the end of the `v-axis`
 does not provide any tools for using this geometry to manipulate trace coordinates.
 I would recommend that this functionality be put into a separate package.
 
+# History
+
+CloudSeis.jl provides support for storing processing history by recording the input data-set(s) and steps in the processing flow that resulted in the data-set.  A step is defined as the process (program) that was run as well as the input parameters for that process.  The history is recursive in the sense that the history of input data-sets are embedded.
+
+Example of creating an new history dictionary:
+
+```julia
+h = history!(flow_parameters=Dict("one"=>1))
+h = history!(h, process="myprocess1", process_parameters=Dict("two"=>2,"three"=>3))
+h = history!(h, process="myprocess2", process_parameters=Dict("four"=>4,"five"=>5))
+```
+
+We can then use that history in the construction of a new CloudSeis data-set,
+```julia
+io = csopen(Folder("file-1-cs"), "w", axis_lengths=[12,11,10], history=h)
+history(io) # outputs the history as a dictionary
+close(io)
+```
+
+Finally, we can use embed this history of `file-1-cs` into a new data-set,
+```julia
+io = csopen(Folder("file-1-cs"))
+h = history!(process="myprocess3", process_parameters=Dict("eight"=>8,"nine"=>9), histories = [Folder("file-1-cs")])
+close(io)
+io = csopen(Folder("file-2-cs"), "w"; axis_lengths=[12,11,10], history=h)
+using JSON
+print(json(history(io), 1))
+```
+Then the history structure is:
+```json
+{
+ "flow": {
+  "parameters": {},
+  "processes": [
+   {
+    "parameters": {
+     "eight": 8,
+     "nine": 9
+    },
+    "process": "myprocess3"
+   }
+  ]
+ },
+ "inputs": [
+  {
+   "history": {
+    "flow": {
+     "parameters": {
+      "one": 1
+     },
+     "processes": [
+      {
+       "parameters": {
+        "two": 2,
+        "three": 3
+       },
+       "process": "myprocess1"
+      },
+      {
+       "parameters": {
+        "four": 4,
+        "five": 5
+       },
+       "process": "myprocess2"
+      }
+     ]
+    }
+   },
+   "container": {
+    "foldername": "/home/tqff/.julia/dev/CloudSeis/file-1-cs"
+   }
+  }
+ ]
+}
+```
+
 # Convenience methods and dictionaries
 
 For convenience and consistency, we supply several dictionaries.  In addition to
