@@ -361,9 +361,9 @@ I would recommend that this functionality be put into a separate package.
 
 # History
 
-CloudSeis.jl provides support for storing processing history by recording the input data-set(s) and steps in the processing flow that resulted in the data-set.  A step is defined as the process (program) that was run as well as the input parameters for that process.  The history is recursive in the sense that the history of input data-sets are embedded.
+CloudSeis.jl provides support for storing processing history by recording the input data-set(s) and steps in the processing flow that resulted in a new data-set.  A step is defined as the process (program) that was run as well as the input parameters for that process.  The history is recursive in the sense that the history of input data-sets are embedded.
 
-Example of creating an new history dictionary:
+Example of creating a new history dictionary:
 
 ```julia
 h = history!(flow_parameters=Dict("one"=>1))
@@ -378,7 +378,7 @@ history(io) # outputs the history as a dictionary
 close(io)
 ```
 
-Finally, we can use embed this history of `file-1-cs` into a new data-set,
+Finally, we can embed the history of `file-1-cs` into a new data-set,
 ```julia
 io = csopen(Folder("file-1-cs"))
 h = history!(process="myprocess3", process_parameters=Dict("eight"=>8,"nine"=>9), histories = [Folder("file-1-cs")])

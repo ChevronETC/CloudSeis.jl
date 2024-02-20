@@ -385,8 +385,7 @@ Please refer to CvxCompress.jl for more information.  If `compressor_options` is
 the defaults are `(b1=16,b2=16,b3=16,scale=1e-2)`.
 
 * The history dictionary must follow a specific structure.  One can get the history from an existing data-set via `history(io::CSeis)`, and can
-construct and/or agument history via `history!`.  In genral the structure
-is,
+construct and/or agument history via `history!`.  In general the structure is,
 ```julia
 Dict(
     "inputs" => [
@@ -2306,7 +2305,7 @@ end
 Mutate the history of an existing CloudSeis dataset or dictionary, or create a new history dictionary.
 
 # optional key-word arguments
-* `process=""` name of a process that was run the flow that produced the data-set.
+* `process=""` name of a process that was run in a flow that produced the data-set.
 * `process_parameters=Dict()` process parameters.
 * `flow_parameters=Dit()` flow parameters.
 
