@@ -1,4 +1,4 @@
-using AzSessions, AzStorage, CloudSeis, Dates, Distributed, FolderStorage, HTTP, JSON, Random, Test, UUIDs
+using AbstractStorage, AzSessions, AzStorage, CloudSeis, Dates, Distributed, FolderStorage, HTTP, JSON, Random, Test, UUIDs
 
 # trigger extensions
 using Blosc
@@ -1240,6 +1240,48 @@ end
     for i4 = 3:4, i3=1:20
         @test fold(io, i3, i4) == 0
     end
+
+    rm(io)
+end
+
+@testset "history construction and access" for cloud in clouds
+    x = history!(
+        process = "myprocess1",
+        process_parameters = Dict("one"=>1,"two"=>2),
+        flow_parameters = Dict("three"=>3),
+        histories=[])
+
+    x = history!(x, process="myprocess2", process_parameters = Dict("four"=>4,"five"=>5))
+
+    @test !haskey(x, "inputs")
+    @test x["flow"]["processes"][1]["process"] == "myprocess1"
+    @test x["flow"]["processes"][1]["parameters"] == Dict("one"=>1,"two"=>2)
+    @test x["flow"]["processes"][2]["process"] == "myprocess2"
+    @test x["flow"]["processes"][2]["parameters"] == Dict("four"=>4,"five"=>5)
+    @test x["flow"]["parameters"] == Dict("three"=>3)
+
+    container = mkcontainer(cloud, "test-$(uuid4())-cs")
+    io = csopen_robust(container, "w", axis_lengths=[10,12,20,2], frames_per_extent=10, history=x)
+    close(io)
+
+    y = history(io)
+    @test x == y
+
+    z = history!(
+        process = "myprocess3",
+        process_parameters = Dict("six"=>6, "seven"=>7),
+        histories = [container]
+    )
+
+    @test z["inputs"][1]["history"] == y
+
+    if isa(container, Vector)
+        @test z["inputs"][1]["container"] == merge(minimaldict(container[1]), Dict("backend"=>backend(container[1])))
+    else
+        @test z["inputs"][1]["container"] == merge(minimaldict(container), Dict("backend"=>backend(container)))
+    end
+    @test z["flow"]["processes"][1]["process"] == "myprocess3"
+    @test z["flow"]["processes"][1]["parameters"] == Dict("six"=>6, "seven"=>7)
 
     rm(io)
 end

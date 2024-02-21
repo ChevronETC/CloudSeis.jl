@@ -328,6 +328,7 @@ container.  The `axis_lengths` vector is of at-least length 3.
 
 # Optional keyword arguments
 * `similarto::String` An existing CloudSeis dataset.  If set, then all other named arguments can be used to modify the data context that belongs to the existing CloudSeis dataset.
+* `history` history dictionary (see notes, below, for how it should be formatted/constructed).
 * `datatype::String` Examples are `CMP`, `SHOT`, etc.  If not set, then `UNKNOWN` is used.
 * `traceformat::DataType=Float32` Not supported.  We have only tested against `traceformat=Float32`.
 * `byteorder::String`
@@ -382,9 +383,32 @@ of the choice of `compressor_options`.
 ```
 Please refer to CvxCompress.jl for more information.  If `compressor_options` is no supplied, then
 the defaults are `(b1=16,b2=16,b3=16,scale=1e-2)`.
+
+* The history dictionary must follow a specific structure.  One can get the history from an existing data-set via `history(io::CSeis)`, and can
+construct and/or agument history via `history!`.  In general the structure is,
+```julia
+Dict(
+    "inputs" => [
+        Dict(
+            "container" => container, # dictionary describing where the input data-set is.
+            "history" => history dictionary that, recursively, embeds the history of the input data-set.
+        )
+    ],
+    "flow" => Dict(
+        "flow" => Dict(
+            "parameters" => flowparameters, # dictionary describing parameters that apply to all processes
+            "processes" => [
+                "process" => process, # dictionary or string that uniquely locates the process run
+                "parameters" => parameters # dictionary describing parameters passed to the process
+            ]
+        )
+    )
+)
+```
 """
 function csopen(containers::Vector{<:Container}, mode;
         similarto = "",
+        history = nothing,
         datatype = "",
         force = false,
         traceformat = nothing,
@@ -407,6 +431,7 @@ function csopen(containers::Vector{<:Container}, mode;
         compressor_options = nothing)
     kwargs = (
         similarto = similarto,
+        history = history,
         datatype = datatype,
         force = force,
         traceformat = traceformat,
@@ -455,8 +480,16 @@ in the "primary" container.
 """
 cscreate(containers::Union{Container,Vector{<:Container}}; kwargs...) = close(csopen(containers, "w"; kwargs...))
 
+read_description(container::Container) = JSON.parse(read(joinpath(container, "description.json"), String))
+read_description(containers::Vector{<:Container}) = read_description(containers[1])
+read_description(io::CSeis) = read_description(io.containers[1])
+
+write_description(container::Container, description) = write(joinpath(container, "description.json"), json(description, 1))
+write_description(containers::Vector{<:Container}, description) = write_description(containers[1], description)
+write_description(io::CSeis, description) = write_description(io.containers[1], description)
+
 function csopen_read(containers::Vector{<:Container}, mode)
-    description = JSON.parse(read(containers[1], "description.json", String))
+    description = read_description(containers[1])
 
     traceproperties = get_trace_properties(description)
     csopen_from_description(containers, mode, description, traceproperties)
@@ -476,6 +509,40 @@ function make_extents(containers::Vector{C}, nextents, foldername, nominal_frame
         k = k == length(containers) ? 1 : k + 1
     end
     extents
+end
+
+function validate_history_dictionary(h)
+    for key in keys(h)
+        if key ∉ ("inputs", "flow")
+            error("history dictionary has invalid key '$key'")
+        end
+    end
+
+    for key in keys(get(h, "flow", Dict()))
+        if key ∉ ("processes", "parameters")
+            error("history[\"flow\"] dictionary has invalid key '$key'")
+        end
+    end
+
+    processes = get(get(h, "flow", Dict()), "processes", [])
+    for (iprocess,process) in enumerate(processes)
+        for key in keys(process)
+            if key ∉ ("process", "parameters")
+                error("history[\"flow\"][\"processes\"][$iprocess] has invalid key '$key'")
+            end
+        end
+    end
+
+    inputs = get(h, "inputs", [])
+    for (iinput,input) in enumerate(inputs)
+        for key in keys(input)
+            if key ∉ ("container", "history")
+                error("history[\"input\"][$iinput] has invalid key '$key'")
+            end
+        end
+    end
+
+    h
 end
 
 function csopen_write(containers::Vector{<:Container}, mode; kwargs...)
@@ -537,17 +604,22 @@ function csopen_write(containers::Vector{<:Container}, mode; kwargs...)
             "axis_pincs" => axis_pincs,
             "axis_lstarts" => axis_lstarts,
             "axis_lincs" => axis_lincs),
-        "traceproperties"=>[Dict(traceproperty) for traceproperty in traceproperties],
-        "dataproperties"=>isempty(kwargs[:dataproperties]) ? Dict() : mapreduce(Dict, merge, kwargs[:dataproperties]),
-        "extents"=>Dict.(extents),
-        "compressor"=>Dict(kwargs[:compressor]))
+        "traceproperties" => [Dict(traceproperty) for traceproperty in traceproperties],
+        "dataproperties" => isempty(kwargs[:dataproperties]) ? Dict() : mapreduce(Dict, merge, kwargs[:dataproperties]),
+        "extents" => Dict.(extents),
+        "compressor" => Dict(kwargs[:compressor])
+    )
 
-    if kwargs[:geometry] != nothing
+    if kwargs[:geometry] !== nothing
         merge!(description, Dict("geometry"=>Dict(kwargs[:geometry])))
     end
 
+    if kwargs[:history] !== nothing
+        description["history"] = validate_history_dictionary(kwargs[:history])
+    end
+
     mkpath.(containers)
-    write(containers[1], "description.json", json(description, 1))
+    write_description(containers[1], description)
     io = csopen_from_description(containers, mode, description, traceproperties)
     empty!(io) # agressive emptying (over-writing) of existing data-set with same name.
     io
@@ -570,6 +642,7 @@ function process_kwargs(;kwargs...)
 
     (
         similarto = kwargs[:similarto],
+        history = kwargs[:history],
         datatype = kwargs[:datatype] == "" ? "custom" : kwargs[:datatype],
         force = kwargs[:force],
         traceformat = kwargs[:traceformat] == nothing ? Float32 : kwargs[:traceformat],
@@ -649,8 +722,14 @@ function process_kwargs_similarto(;kwargs...)
         compressor = compressors()[kwargs[:compressor]](;compressor_options...)
     end
 
+    _history = kwargs[:history]
+    if kwargs[:history] === nothing
+        _history = history(io)
+    end
+
     (
         similarto = kwargs[:similarto],
+        history = _history,
         datatype = kwargs[:datatype] == "" ? io.datatype : kwargs[:datatype],
         force = kwargs[:force],
         traceformat = kwargs[:traceformat] == nothing ? io.traceformat : kwargs[:traceformat],
@@ -1868,9 +1947,9 @@ function Base.reduce(io::CSeis; mbytes_per_extent=1000, frames_per_extent=0)
     _rm(tsk, io) = rm(io.extents[tsk].container, io.extents[tsk].name)
     pmap(tsk->_rm(tsk, io), 1:length(io.extents))
 
-    description = JSON.parse(read(io.containers[1], "description.json", String))
+    description = read_description(io)
     description["extents"] = [Dict(extents[i]) for i=1:nextents]
-    write(_io.containers[1], "description.json", JSON.json(description, 1))
+    write_description(io, description)
 
     _io
 end
@@ -1949,13 +2028,13 @@ must be greater than `prod(size(io)[3:end])` and `axis_lengths[i]` must equal `s
 function description!(io::CSeis; axis_lengths=nothing)
     io.mode == "r+" || error("mutation is only availabe for data-sets open in 'r+' mode.")
 
-    description = JSON.parse(read(joinpath(io.containers[1], "description.json"), String))
+    description = read_description(io)
 
     if axis_lengths !== nothing
         description_axis_lengths!(io, description, axis_lengths)
     end
 
-    write(io.containers[1], "description.json", json(description, 1))
+    write_description(io, description)
 end
 
 function cp_extent(iextent, src_extent, dst_extent, nextents)
@@ -1990,7 +2069,7 @@ The `cp` method will be executed on the set of machines defined by `workers`.  N
 work will be sent to the workers one batch at a time.
 """
 function Base.cp(src::CSeis, dst_containers::Vector{<:Container}, extents=Colon(); batch_size=32, workers=Distributed.workers)
-    description = JSON.parse(read(src.containers[1], "description.json", String))
+    description = read_description(src)
 
     src_extents = [Extent(description["extents"][iextent], src.containers) for iextent in eachindex(description["extents"])]
     dst_extents = similar(src_extents)
@@ -2005,7 +2084,7 @@ function Base.cp(src::CSeis, dst_containers::Vector{<:Container}, extents=Colon(
         mkpath(dst_container)
     end
 
-    write(dst_containers[1], "description.json", json(description, 1))
+    write_description(dst_containers[1], description)
 
     local iextents
     if extents == Colon()
@@ -2220,6 +2299,56 @@ function Base.copy!(ioout::CSeis, hdrsout::AbstractArray{UInt8,2}, ioin::CSeis, 
     end
 end
 
+"""
+    h = history!([io::CSeis|history::Dict]; kwargs...)
+
+Mutate the history of an existing CloudSeis dataset or dictionary, or create a new history dictionary.
+
+# optional key-word arguments
+* `process=""` name of a process that was run in a flow that produced the data-set.
+* `process_parameters=Dict()` process parameters.
+* `flow_parameters=Dit()` flow parameters.
+
+# Notes
+* If more than one process was run (e.g. a flow of processes) to produce the data-set, then call `history!` in the
+order that the processes were run.
+* The history can be passed to the `csopen` and `cscreate` methods via the `history` key-word argument.
+"""
+function history!(h::Dict=Dict(); process="", process_parameters::Dict=Dict(), flow_parameters::Dict=Dict(), histories=[])
+    haskey(h, "flow") || (h["flow"] = Dict("parameters"=>Dict(), "processes"=>[]))
+
+    isempty(flow_parameters) || merge!(h["flow"]["parameters"], flow_parameters)
+
+    isempty(process) && !isempty(process_parameters) && error("if 'process_parameters' is not empty, then 'process' must not be empty")
+
+    if !isempty(process)
+        push!(h["flow"]["processes"], Dict("process"=>process, "parameters"=>process_parameters))
+    end
+
+    if !isempty(histories)
+        haskey(h, "inputs") || (h["inputs"] = [])
+        for history_input in histories
+            _history_input = isa(history_input, AbstractArray) ? history_input[1] : history_input
+            history_input_description = read_description(_history_input)
+            input = Dict{String,Any}("container" => merge(minimaldict(_history_input), Dict("backend" => backend(_history_input))))
+            if haskey(history_input_description, "history")
+                input["history"] = history_input_description["history"]
+            end
+            push!(h["inputs"], input)
+        end
+    end
+    h
+end
+
+function history!(io::CSeis; kwargs...)
+    description = read_description(io)
+    description["history"] = history!(get(description, "history", Dict()))
+    write_description(io, description)
+    description["history"]
+end
+
+history(io::CSeis) = get(read_description(io), "history", nothing)
+
 export
 LogicalIndices,
 DataProperty,
@@ -2239,6 +2368,8 @@ geometry,
 getframe,
 getframehdrs,
 getframetrcs,
+history,
+history!,
 cscreate,
 csopen,
 hasdataproperty,
