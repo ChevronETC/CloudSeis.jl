@@ -34,7 +34,7 @@ DataProperty(dataproperty::Dict) = DataProperty(first(keys(dataproperty)), first
 
 include("stockprops.jl")
 
-struct Geometry
+mutable struct Geometry
     u1::Int
     un::Int
     v1::Int
@@ -53,8 +53,46 @@ struct Geometry
     wx::Float64
     wy::Float64
     wz::Float64
+    x_direction::String
+    y_direction::String
+    z_direction::String
+    tti_angle_units::String
+    tti_azimuth_positive_direction::String
+    tti_azimuth_origin_axis::String
+    tti_symmetry_axis_z_direction::String 
+    modelstride_u::Int
+    modelstride_v::Int
+    modelstride_w::Int
 end
 
+"""
+    g = Geometry([;kwargs...])
+
+Returns a geometry object associated with the CloudSeis data-set.  This includes an origin (`o`)
+and three orthogonal vectors (`u`,`v`,`w`).  In addition, one can specify how azimuth is defined
+for TTI earth models by giving a specific direction for positive azimuth, and the axis from which
+it is measured.  This can be useful when describing the orientation of a model in three dimensional
+space.
+
+# key-word arguments
+* `ox=0,oy=0,oz=0` grid origin
+* `ux=0,uy=0,uz=1` u vector such that the end of the u axis is at the point (ox+ux,oy+uy,oz+uz)
+* `vx=0,vy=0,vz=1` v vector such that the end of the u axis is at the point (ox+vx,oy+vy,oz+vz)
+* `wx=0,wy=0,wz=1` w vector such that the end of the u axis is at the point (ox+wx,oy+wy,oz+wz)
+* `u1=1,un=2` integer end-points (u axis) that can be used to describe a grid (e.g. for finite difference)
+* `v1=1,vn=2` integer end-points (v axis) that can be used to describe a grid (e.g. for finite difference)
+* `w1=1,wn=2` integer end-points (w axis) that can be used to describe a grid (e.g. for finite difference)
+* `x_direction="east"` compass direction that 'x' is parallel to
+* `y_direction="north"` compass direction that 'y' is parallel to
+* `z_direction="depth"` compass direction that 'z' is parallel to
+* `tti_angle_units="degrees"` for TTI models specify if the tilt and azimuth angles are stored in ("degrees", "radians", or "unknown")
+* `tti_azimuth_positive_direction="counter clockwise"` for TTI models, define the orientation of the azimuth ("clockwise", "counter clockwise" or "unknown")
+* `tti_azimuth_origin_axis="v"` for TTI models, define the axis from which azimuth is measured and at which azimuth is 0 (choose from: "u", "v", "w", "x", "y", "-u", "-v", "-w", "-x", "-y" or "unknown")
+* `tti_symmetry_axis_z_direction="up"` for TTI models, define if the projection of the normal to the symmetry axis onto z = (0,0,1) point up or down
+# notes
+* this method does not check to see if the u,v,w vectors are orthogonal
+* for models that do not required azimuthal anisotropy (e.g. isotropic, VTI), it is convenient to set `tti_azimumth_positive_direction` and `tti_azimuth_origin_axis` to "unknown"
+"""
 function Geometry(;
         ox=0.0,oy=0.0,oz=0.0,
         ux=1.0,uy=0.0,uz=0.0,
@@ -62,8 +100,22 @@ function Geometry(;
         wx=0.0,wy=0.0,wz=1.0,
         u1=1,un=2,
         v1=1,vn=2,
-        w1=1,wn=2)
-    Geometry(u1,un,v1,vn,w1,wn,ox,oy,oz,ux,uy,uz,vx,vy,vz,wx,wy,wz)
+        w1=1,wn=2,
+        x_direction = "east",
+        y_direction = "north",
+        z_direction = "depth",
+        tti_angle_units = "degrees",
+        tti_azimuth_positive_direction = "counter clockwise",
+        tti_azimuth_origin_axis = "x",
+        tti_symmetry_axis_z_direction="down")
+    x_direction ∈ ("east", "north", "depth", "west", "south", "elevation", "unknown") || error("'x_direction' must be one of (\"east\", \"north\", \"depth\", \"west\", \"south\", \"elevation\", \"unknown\")")
+    y_direction ∈ ("east", "north", "depth", "west", "south", "elevation", "unknown") || error("'y_direction' must be one of (\"east\", \"north\", \"depth\", \"west\", \"south\", \"elevation\", \"unknown\")")
+    z_direction ∈ ("east", "north", "depth", "west", "south", "elevation", "unknown") || error("'z_direction' must be one of (\"east\", \"north\", \"depth\", \"west\", \"south\", \"elevation\", \"unknown\")")
+    tti_angle_units ∈ ("degrees", "radians","unknown") || error("`tti_angle_units` must be one of (\"degrees\", \"radians\", \"unknown\")")
+    tti_azimuth_positive_direction ∈ ("clockwise", "counter clockwise", "unknown") || error("'tti_azimuth_rotation' must be one of (\"clockwise\",\"counter clockwise\", \"unknown\")")
+    tti_azimuth_origin_axis ∈ ("x", "-x", "y", "-y", "u", "-u", "v", "-v", "w", "-w", "unknown") || error("'tti_azimuth_origin_axis' must be one of (\"x\", \"-x\", \"y\", \"-y\", \"u\", \"-u\", \"v\", \"-v\", \"w\", \"-w\", \"unknown\")")
+    tti_symmetry_axis_z_direction ∈ ("up","down","unknown") || error("`tti_symmetry_axis_z_direction` must be one of (\"up\", \"down\", or \"unknown\") ")
+    Geometry(u1,un,v1,vn,w1,wn,ox,oy,oz,ux,uy,uz,vx,vy,vz,wx,wy,wz,x_direction,y_direction,z_direction,tti_angle_units,tti_azimuth_positive_direction,tti_azimuth_origin_axis,tti_symmetry_axis_z_direction,1,1,1)
 end
 
 Base.Dict(g::Geometry) = Dict(
@@ -73,7 +125,14 @@ Base.Dict(g::Geometry) = Dict(
     "wx"=>g.wx, "wy"=>g.wy, "wz"=>g.wz,
     "u1"=>g.u1, "un"=>g.un,
     "v1"=>g.v1, "vn"=>g.vn,
-    "w1"=>g.w1, "wn"=>g.wn)
+    "w1"=>g.w1, "wn"=>g.wn,
+    "x_direction"=>g.x_direction,
+    "y_direction"=>g.y_direction,
+    "z_direction"=>g.z_direction,
+    "tti_angle_units"=>g.tti_angle_units,
+    "tti_azimuth_positive_direction"=>g.tti_azimuth_positive_direction,
+    "tti_azimuth_origin_axis"=>g.tti_azimuth_origin_axis,
+    "tti_symmetry_axis_z_direction"=>g.tti_symmetry_axis_z_direction)
 
 struct Extent{C<:Container}
     name::String
@@ -902,16 +961,77 @@ function get_data_properties(description::Dict)
     NamedTuple{names}(_values)
 end
 
+# function get_sample_order(description::Dict)
+#     pdefs = description["fileproperties"][1:3]
+#     pdefs == ["IU", "IV", "IW"] && (return "uvw")
+#     pdefs == ["IU", "IW", "IV"] && (return "uwv")
+#     pdefs == ["IV", "IU", "IW"] && (return "vuw")
+#     pdefs == ["IV", "IW", "IU"] && (return "vwu")
+#     pdefs == ["IW", "IU", "IV"] && (return "wuv")
+#     pdefs == ["IW", "IV", "IU"] && (return "wvu")
+
+#     @warn "unknown model order. use `propdefs(io)=(stockprop[:IU],stockprop[:IV],stockprop[:IW])` or some permutation there-of to define order"
+#     return "unknown"
+# end
+
+function get_sample_order(io::CSeis)
+    pdefs = []
+    for property in io.axis_propdefs
+        push!(pdefs,property.label)
+    end
+    pdefs = pdefs[1:3]
+
+    pdefs == ["IU", "IV", "IW"] && (return "uvw")
+    pdefs == ["IU", "IW", "IV"] && (return "uwv")
+    pdefs == ["IV", "IU", "IW"] && (return "vuw")
+    pdefs == ["IV", "IW", "IU"] && (return "vwu")
+    pdefs == ["IW", "IU", "IV"] && (return "wuv")
+    pdefs == ["IW", "IV", "IU"] && (return "wvu")
+
+    @warn "unknown model order. use `propdefs(io)=(stockprop[:IU],stockprop[:IV],stockprop[:IW])` or some permutation there-of to define order"
+    return "unknown"
+end
+
+function get_model_strides(io::CSeis)
+    pdefs = []
+    for property in io.axis_propdefs
+        push!(pdefs,property.label)
+    end
+    pdefs = pdefs[1:3]
+    
+    if "IU" ∈ pdefs && "IV" ∈ pdefs && "IW" ∈ pdefs
+        strides = [1,size(io,1),size(io,1)*size(io,2)]
+        pdefs == ["IU", "IV", "IW"] && (return modelstrides = Dict("u"=>strides[1],"v"=>strides[2],"w"=>strides[3]))
+        pdefs == ["IU", "IW", "IV"] && (return modelstrides = Dict("u"=>strides[1],"w"=>strides[2],"v"=>strides[3]))
+        pdefs == ["IV", "IU", "IW"] && (return modelstrides = Dict("v"=>strides[1],"u"=>strides[2],"w"=>strides[3]))
+        pdefs == ["IV", "IW", "IU"] && (return modelstrides = Dict("v"=>strides[1],"w"=>strides[2],"u"=>strides[3]))
+        pdefs == ["IW", "IV", "IU"] && (return modelstrides = Dict("w"=>strides[1],"v"=>strides[2],"u"=>strides[3]))
+        pdefs == ["IW", "IU", "IV"] && (return modelstrides = Dict("w"=>strides[1],"u"=>strides[2],"v"=>strides[3]))
+    else
+        @warn("CloudSeis axis properties missing one of `IU`, `IV`, `IW`, cannot determine modelstrides. Use `propdefs(io)=(stockprop[:IU],stockprop[:IV],stockprop[:IW])` or some permutation there-of. \n Assumed first dimension `u`, second dimension `v`, third dimension `w`.")
+        return modelstrides = Dict("u"=>1,"v"=>size(io,1),"w"=>size(io,1)*size(io,2))
+    end
+end
+
 function get_geometry(description::Dict)
     if "geometry" ∉ keys(description)
         return nothing
     end
 
     c = description["geometry"]
+
     Geometry(
         c["u1"],c["un"],c["v1"],c["vn"],c["w1"],c["wn"],
         c["ox"],c["oy"],c["oz"],c["ux"],c["uy"],c["uz"],
-        c["vx"],c["vy"],c["vz"],c["wx"],c["wy"],c["wz"])
+        c["vx"],c["vy"],c["vz"],c["wx"],c["wy"],c["wz"],
+        haskey(c, "x_direction") ? c["x_direction"] : "unknown",
+        haskey(c, "y_direction") ? c["y_direction"] : "unknown",
+        haskey(c, "z_direction") ? c["z_direction"] : "unknown",
+        haskey(c, "tti_angle_units") ? c["tti_angle_units"] : "unknown",
+        haskey(c, "tti_azimuth_positive_direction") ? c["tti_azimuth_positive_direction"] : "unknown",
+        haskey(c, "tti_azimuth_origin_axis") ? c["tti_azimuth_origin_axis"] : "unknown",
+        haskey(c,"tti_symmetry_axis_z_direction") ? c["tti_symmetry_axis_z_direction"] : "unknown",
+        1,1,1) # Ones are for model strides which aren't read until later. Need more elegant fix 
 end
 
 function stringtype2type(format::AbstractString, elementcount=1)
@@ -2221,7 +2341,18 @@ TeaSeis.domains(io::CSeis) = io.axis_domains
 Return the geometry (if any) associated with the
 CloudSeis data-set.
 """
-TeaSeis.geometry(io::CSeis) = io.geometry
+function TeaSeis.geometry(io::CSeis)
+    
+    g = io.geometry
+    # sample_order = get_sample_order(io)
+    modelstrides = get_model_strides(io)
+    g.modelstride_u = modelstrides["u"]
+    g.modelstride_v = modelstrides["v"]
+    g.modelstride_w = modelstrides["w"]
+
+    return g
+
+end
 
 """
     in(propdef::TracePropertyDef, io::CSeis)

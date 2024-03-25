@@ -496,40 +496,105 @@ const compressors = Sys.iswindows() ? ("none","blosc","leftjustify","zfp") : ("n
         rm(io)
     end
 
-    @testset "geometry" begin
+    @testset "azimuth information" begin 
+        x_direction = "east"
+        y_direction = "north"
+        z_direction = "elevation"
+        tti_angle_units = "degrees"
+        tti_azimuth_positive_direction = "clockwise"
+        tti_azimuth_origin_axis = "y"
+        tti_symmetry_axis_z_direction = "up"
+
+        
         g = Geometry(
             ox=1.0,oy=2.0,oz=3.0,
             ux=4.0,uy=5.0,uz=6.0,
             vx=7.0,vy=8.0,vz=9.0,
             wx=10.0,wy=11.0,wz=12.0,
             u1=1,un=2,
-            v1=3,vn=4,
-            w1=5,wn=6)
+            v1=1,vn=4,
+            w1=1,wn=6,
+            x_direction=x_direction,
+            y_direction=y_direction,
+            z_direction=z_direction,
+            tti_angle_units = tti_angle_units,
+            tti_azimuth_positive_direction = tti_azimuth_positive_direction,
+            tti_azimuth_origin_axis = tti_azimuth_origin_axis,
+            tti_symmetry_axis_z_direction=tti_symmetry_axis_z_direction)
+
+
         r = uuid4()
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], geometry=g, compressor=compressor, compressor_options=compressor_options)
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w",axis_propdefs=[stockprop[:IU],stockprop[:IV],stockprop[:IW],stockprop[:VOLUME]],axis_lengths=[g.un,g.vn,g.wn], geometry=g, compressor=compressor, compressor_options=compressor_options)
 
         _g = geometry(io)
-        @test g.ox ≈ 1.0
-        @test g.oy ≈ 2.0
-        @test g.oz ≈ 3.0
-        @test g.ux ≈ 4.0
-        @test g.uy ≈ 5.0
-        @test g.uz ≈ 6.0
-        @test g.vx ≈ 7.0
-        @test g.vy ≈ 8.0
-        @test g.vz ≈ 9.0
-        @test g.wx ≈ 10.0
-        @test g.wy ≈ 11.0
-        @test g.wz ≈ 12.0
-        @test g.u1 == 1
-        @test g.un == 2
-        @test g.v1 == 3
-        @test g.vn == 4
-        @test g.w1 == 5
-        @test g.wn == 6
-
+        @test _g.ox ≈ g.ox
+        @test _g.oy ≈ g.oy
+        @test _g.oz ≈ g.oz
+        @test _g.ux ≈ g.ux
+        @test _g.uy ≈ g.uy
+        @test _g.uz ≈ g.uz
+        @test _g.vx ≈ g.vx
+        @test _g.vy ≈ g.vy
+        @test _g.vz ≈ g.vz
+        @test _g.wx ≈ g.wx
+        @test _g.wy ≈ g.wy
+        @test _g.wz ≈ g.wz
+        @test _g.u1 === g.u1
+        @test _g.un === g.un
+        @test _g.v1 === g.v1
+        @test _g.vn === g.vn
+        @test _g.w1 === g.w1
+        @test _g.wn === g.wn
+        @test _g.x_direction == g.x_direction
+        @test _g.y_direction == g.y_direction
+        @test _g.z_direction == g.z_direction
+        @test _g.tti_angle_units == tti_angle_units
+        @test _g.modelstride_u == 1
+        @test _g.modelstride_v == g.un
+        @test _g.modelstride_w == g.vn*g.un
+        @test _g.tti_azimuth_positive_direction == g.tti_azimuth_positive_direction
+        @test _g.tti_azimuth_origin_axis == g.tti_azimuth_origin_axis
+        @test _g.tti_symmetry_axis_z_direction == g.tti_symmetry_axis_z_direction
         close(io)
         rm(io)
+    end
+
+    @testset "geometry backwards compatability" begin
+        g = Geometry(
+            ox=1.0,oy=2.0,oz=3.0,
+            ux=4.0,uy=5.0,uz=6.0,
+            vx=7.0,vy=8.0,vz=9.0,
+            wx=10.0,wy=11.0,wz=12.0,
+            u1=1,un=2,
+            v1=1,vn=4,
+            w1=1,wn=6)
+
+            r = uuid4()
+            io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w",axis_propdefs=[stockprop[:IU],stockprop[:IV],stockprop[:IW],stockprop[:VOLUME]],axis_lengths=[g.un,g.vn,g.wn], geometry=g, compressor=compressor, compressor_options=compressor_options)
+
+            _g = geometry(io)
+
+            @test _g.ox ≈ g.ox
+            @test _g.oy ≈ g.oy
+            @test _g.oz ≈ g.oz
+            @test _g.ux ≈ g.ux
+            @test _g.uy ≈ g.uy
+            @test _g.uz ≈ g.uz
+            @test _g.vx ≈ g.vx
+            @test _g.vy ≈ g.vy
+            @test _g.vz ≈ g.vz
+            @test _g.wx ≈ g.wx
+            @test _g.wy ≈ g.wy
+            @test _g.wz ≈ g.wz
+            @test _g.u1 === g.u1
+            @test _g.un === g.un
+            @test _g.v1 === g.v1
+            @test _g.vn === g.vn
+            @test _g.w1 === g.w1
+            @test _g.wn === g.wn
+            close(io)
+            rm(io)
+
     end
 
     @testset "in" begin
