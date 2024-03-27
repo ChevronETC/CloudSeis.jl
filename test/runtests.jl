@@ -503,7 +503,7 @@ const compressors = Sys.iswindows() ? ("none","blosc","leftjustify","zfp") : ("n
         tti_angle_units = "degrees"
         tti_azimuth_positive_direction = "clockwise"
         tti_azimuth_origin_axis = "y"
-        tti_symmetry_axis_z_direction = "up"
+        tti_symmetry_axis_z_direction = "elevation"
 
         
         g = Geometry(

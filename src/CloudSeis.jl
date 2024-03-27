@@ -88,7 +88,7 @@ space.
 * `tti_angle_units="degrees"` for TTI models specify if the tilt and azimuth angles are stored in ("degrees", "radians", or "unknown")
 * `tti_azimuth_positive_direction="counter clockwise"` for TTI models, define the orientation of the azimuth ("clockwise", "counter clockwise" or "unknown")
 * `tti_azimuth_origin_axis="v"` for TTI models, define the axis from which azimuth is measured and at which azimuth is 0 (choose from: "u", "v", "w", "x", "y", "-u", "-v", "-w", "-x", "-y" or "unknown")
-* `tti_symmetry_axis_z_direction="up"` for TTI models, define if the projection of the normal to the symmetry axis onto z = (0,0,1) point up or down
+* `tti_symmetry_axis_z_direction="elevation"` for TTI models, define if the projection of the normal to the symmetry axis onto z = (0,0,1) point up (elevation) or down (depth)
 # notes
 * this method does not check to see if the u,v,w vectors are orthogonal
 * for models that do not required azimuthal anisotropy (e.g. isotropic, VTI), it is convenient to set `tti_azimumth_positive_direction` and `tti_azimuth_origin_axis` to "unknown"
@@ -107,14 +107,14 @@ function Geometry(;
         tti_angle_units = "degrees",
         tti_azimuth_positive_direction = "counter clockwise",
         tti_azimuth_origin_axis = "x",
-        tti_symmetry_axis_z_direction="down")
+        tti_symmetry_axis_z_direction="depth")
     x_direction ∈ ("east", "north", "depth", "west", "south", "elevation", "unknown") || error("'x_direction' must be one of (\"east\", \"north\", \"depth\", \"west\", \"south\", \"elevation\", \"unknown\")")
     y_direction ∈ ("east", "north", "depth", "west", "south", "elevation", "unknown") || error("'y_direction' must be one of (\"east\", \"north\", \"depth\", \"west\", \"south\", \"elevation\", \"unknown\")")
     z_direction ∈ ("east", "north", "depth", "west", "south", "elevation", "unknown") || error("'z_direction' must be one of (\"east\", \"north\", \"depth\", \"west\", \"south\", \"elevation\", \"unknown\")")
     tti_angle_units ∈ ("degrees", "radians","unknown") || error("`tti_angle_units` must be one of (\"degrees\", \"radians\", \"unknown\")")
     tti_azimuth_positive_direction ∈ ("clockwise", "counter clockwise", "unknown") || error("'tti_azimuth_rotation' must be one of (\"clockwise\",\"counter clockwise\", \"unknown\")")
     tti_azimuth_origin_axis ∈ ("x", "-x", "y", "-y", "u", "-u", "v", "-v", "w", "-w", "unknown") || error("'tti_azimuth_origin_axis' must be one of (\"x\", \"-x\", \"y\", \"-y\", \"u\", \"-u\", \"v\", \"-v\", \"w\", \"-w\", \"unknown\")")
-    tti_symmetry_axis_z_direction ∈ ("up","down","unknown") || error("`tti_symmetry_axis_z_direction` must be one of (\"up\", \"down\", or \"unknown\") ")
+    tti_symmetry_axis_z_direction ∈ ("elevation","depth","unknown") || error("`tti_symmetry_axis_z_direction` must be one of (\"elevation\", \"depth\", or \"unknown\") ")
     Geometry(u1,un,v1,vn,w1,wn,ox,oy,oz,ux,uy,uz,vx,vy,vz,wx,wy,wz,x_direction,y_direction,z_direction,tti_angle_units,tti_azimuth_positive_direction,tti_azimuth_origin_axis,tti_symmetry_axis_z_direction,1,1,1)
 end
 
