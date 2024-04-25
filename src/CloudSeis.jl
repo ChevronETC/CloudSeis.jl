@@ -627,6 +627,8 @@ function csopen_write(containers::Vector{<:Container}, mode; kwargs...)
     axis_lengths = kwargs[:axis_lengths]
     nframes = prod(axis_lengths[3:end])
 
+    mkpath.(containers)
+
     local extents
     if length(kwargs[:extents]) > 0
         l = ceil(Int, log10(length(kwargs[:extents])))
@@ -677,7 +679,6 @@ function csopen_write(containers::Vector{<:Container}, mode; kwargs...)
         description["history"] = validate_history_dictionary(kwargs[:history])
     end
 
-    mkpath.(containers)
     write_description(containers[1], description)
     io = csopen_from_description(containers, mode, description, traceproperties)
     empty!(io) # agressive emptying (over-writing) of existing data-set with same name.
