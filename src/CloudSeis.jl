@@ -144,12 +144,18 @@ function Dict(extent::Extent)
     Dict("name"=>extent.name, "container"=>minimaldict(extent.container), "firstframe"=>extent.frameindices[1], "lastframe"=>extent.frameindices[end])
 end
 
-function Extent(extent::Dict, containers::Vector{C}) where {C<:Container}
+function dcontainer_add_prefix(dcontainer::Dict)
+    if !haskey(dcontainer, "prefix")
+        dcontainer["prefix"] = ""
+    end
+    dcontainer
+end
+
+function Extent(extent::Dict, containers::Vector{C}, dcontainers::Vector{<:Dict}) where {C<:Container}
     if haskey(extent, "container")
-        if !haskey(extent["container"], "prefix") # for backwards compatability
-            extent["container"]["prefix"] = ""
-        end
-        Extent(extent["name"], Container(C, extent["container"], session(containers[1])), extent["firstframe"]:extent["lastframe"])
+        dcontainer_add_prefix(extent["container"]) # for backwards compatability
+        icontainer = findfirst(dcontainer->extent["container"] == dcontainer, dcontainers)
+        Extent(extent["name"], containers[icontainer], extent["firstframe"]:extent["lastframe"])
     else # for backwards compatability -- reading data generated with CloudSeis <= 0.2
         Extent(extent["name"], containers[1], extent["firstframe"]:extent["lastframe"])
     end
@@ -812,9 +818,15 @@ function process_kwargs_similarto(;kwargs...)
     )
 end
 
-function csopen_from_description(containers, mode, description, traceproperties)
+function csopen_from_description(containers::Vector{C}, mode, description, traceproperties) where {C<:Container}
     ndim = length(description["fileproperties"]["axis_lengths"])
     compressor = Compressor(get(description, "compressor", Dict()))
+
+    # get a list of unique containers from the extents.
+    dextent_containers = unique([extent["container"] for extent in description["extents"]])
+    dcontainer_add_prefix.(dextent_containers) # for backwards compatability
+    extent_containers = [Container(C, dextent_container, session(containers[1])) for dextent_container in dextent_containers]
+
     CSeis(
         containers,
         mode,
@@ -832,7 +844,7 @@ function csopen_from_description(containers, mode, description, traceproperties)
         traceproperties,
         get_data_properties(description),
         get_geometry(description),
-        [Extent(extent, containers) for extent in description["extents"]],
+        [Extent(extent, extent_containers, dextent_containers) for extent in description["extents"]],
         Cache(compressor),
         headerlength(traceproperties, hdrlength_multipleof(compressor)))
 end
@@ -2192,7 +2204,8 @@ work will be sent to the workers one batch at a time.
 function Base.cp(src::CSeis, dst_containers::Vector{<:Container}, extents=Colon(); batch_size=32, workers=Distributed.workers)
     description = read_description(src)
 
-    src_extents = [Extent(description["extents"][iextent], src.containers) for iextent in eachindex(description["extents"])]
+    d_src_containers = dcontainer_add_prefix.(minimaldict.(src.containers)) # dcontainer_add_prefix is for backwards compatability
+    src_extents = [Extent(description["extents"][iextent], src.containers, d_src_containers) for iextent in eachindex(description["extents"])]
     dst_extents = similar(src_extents)
 
     for iextent in eachindex(description["extents"])
