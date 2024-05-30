@@ -1350,3 +1350,18 @@ end
 
     rm(io)
 end
+
+@testset "default geometry" for cloud in clouds
+    container = mkcontainer(cloud, "test-$(uuid4())-cs")
+    io = csopen_robust(container, "w", axis_lengths=[10,12,20])
+    close(io)
+
+    io = csopen(container)
+    g = geometry(io)
+
+    @test g.un == 10
+    @test g.vn == 12
+    @test g.wn == 20
+
+    rm(io)
+end

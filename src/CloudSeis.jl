@@ -2356,16 +2356,27 @@ Return the geometry (if any) associated with the
 CloudSeis data-set.
 """
 function TeaSeis.geometry(io::CSeis)
-    
     g = io.geometry
     # sample_order = get_sample_order(io)
     modelstrides = get_model_strides(io)
+
+    if g === nothing
+        g = Geometry(;
+            ox=0.0, oy=0.0, oz=0.0,
+            ux=0.0, uy=0.0, uz=(size(io,1)-1)*pincs(io,1),
+            vx=0.0, vy=(size(io,2)-1)*pincs(io,2), vz=0.0,
+            wx=(size(io,3)-1)*pincs(io,3), wy=0.0, wz=0.0,
+            u1=1,un=size(io,1),
+            v1=1,vn=size(io,2),
+            w1=1,wn=size(io,3)
+        )
+    end
+
     g.modelstride_u = modelstrides["u"]
     g.modelstride_v = modelstrides["v"]
     g.modelstride_w = modelstrides["w"]
 
-    return g
-
+    g
 end
 
 """
