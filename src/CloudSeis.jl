@@ -107,7 +107,7 @@ function Geometry(;
         tti_angle_units = "degrees",
         tti_azimuth_positive_direction = "counter clockwise",
         tti_azimuth_origin_axis = "y",
-        tti_symmetry_axis_z_direction="depth")
+        tti_symmetry_axis_z_direction = "elevation")
     x_direction ∈ ("east", "north", "depth", "west", "south", "elevation", "unknown") || error("'x_direction' must be one of (\"east\", \"north\", \"depth\", \"west\", \"south\", \"elevation\", \"unknown\")")
     y_direction ∈ ("east", "north", "depth", "west", "south", "elevation", "unknown") || error("'y_direction' must be one of (\"east\", \"north\", \"depth\", \"west\", \"south\", \"elevation\", \"unknown\")")
     z_direction ∈ ("east", "north", "depth", "west", "south", "elevation", "unknown") || error("'z_direction' must be one of (\"east\", \"north\", \"depth\", \"west\", \"south\", \"elevation\", \"unknown\")")
