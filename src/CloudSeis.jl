@@ -2238,11 +2238,12 @@ Base.cp(src::CSeis, dst_container::Container, extents=Colon(); kwargs...) = cp(s
 """
     mv(src::CSeis, dst::Container; batch_size=32, workers=Distributed.workers)
 
-move a CloudSeis data-set to `dst`.  See `cp` for a description of `batch_size`
+move a CloudSeis data-set to `dst` and where `dst` is either of type `Container` or
+of type `Vector{Container}`.  See `cp` for a description of `batch_size`
 and `workers`.
 """
-function Base.mv(src::CSeis, dst::Container; kwargs...)
-    cp(src, dst, project=project, location=location; kwargs...)
+function Base.mv(src::CSeis, dst::Union{Container,Vector{<:Container}}; kwargs...)
+    cp(src, dst; kwargs...)
     rm(src)
 end
 
