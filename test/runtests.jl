@@ -793,6 +793,29 @@ const compressors = Sys.iswindows() ? ("none","blosc","leftjustify","zfp") : ("n
         rm(iocp)
     end
 
+    @testset "mv" begin
+        r = uuid4()
+        c_in = mkcontainer(cloud, "test-$r-cs")
+        io = csopen_robust(c_in, "w", axis_lengths=[10,11,50], frames_per_extent=10, compressor=compressor, compressor_options=compressor_options)
+        x = rand(Float32,10,11,50)
+        write(io, x, :, :, :)
+        close(io)
+
+        r = uuid4()
+        c = mkcontainer(cloud, "test-$r-cs")
+
+        mv(io, c)
+
+        iomv = csopen(c)
+        @test readtrcs(iomv, :, :, :) ≈ x rtol=rtol
+        if isa(c_in, AbstractArray)
+            @test isdir(c_in[1]) == false
+        else
+            @test isdir(c_in) == false
+        end
+        rm(iomv)
+    end
+
     @testset "robust cscreate" begin
         r = uuid4()
         io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], force=true, compressor=compressor, compressor_options=compressor_options)
