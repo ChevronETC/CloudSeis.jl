@@ -40,6 +40,21 @@ function CloudSeis.cache_from_file!(io::CSeis{T,N,<:ZfpCompressor}, extentindex,
     nothing
 end
 
+function CloudSeis.read_foldmap!(io::Union{CSeis{T,N,<:ZfpCompressor},CSeis{T,N,CloudSeisCvxCompressor}}, extentindex::Integer, fmap::Vector{UInt8}; serial=false) where {T,N}
+    try
+        nfmap = read!(io.extents[extentindex].container, io.extents[extentindex].name, Vector{Int}(undef, 1); serial=false)[1]
+        cfmap = read!(io.extents[extentindex].container, io.extents[extentindex].name, Vector{UInt8}(undef, nfmap); offset=sizeof(Int), serial)
+        _fmap = unsafe_wrap(Array, convert(Ptr{Int}, pointer(fmap)), length(io.extents[extentindex].frameindices); own=false)
+        zfp_decompress!(_fmap, cfmap)
+    catch e
+        fmap .= 0
+        if !isa(e, FileDoesNotExistError)
+            throw(e)
+        end
+    end
+    fmap
+end
+
 function CloudSeis.cache_foldmap!(io::Union{CSeis{T,N,<:ZfpCompressor},CSeis{T,N,CloudSeisCvxCompressor}}, extentindex::Integer, force=false) where {T,N}
     io.mode == "r" || partialcache_error()
 

@@ -304,6 +304,19 @@ const compressors = Sys.iswindows() ? ("none","blosc","leftjustify","zfp") : ("n
         @test f == [11 for i=1:12]
     end
 
+    @testset "full read for foldmap, lstarts=$lstarts, lincs=$lincs" for (lstrts,lncs) = (((1,1,1),(1,1,1)), ((2,3,4),(5,6,7)))
+        r = uuid4()
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_lstarts=lstrts, axis_lincs=lncs, compressor=compressor, compressor_options=compressor_options, frames_per_extent=2)
+
+        x = rand(Float32,10,11,12)
+        write(io, x, :, :, :)
+        close(io)
+
+        io = csopen(mkcontainer(cloud, "test-$r-cs"))
+        f = foldmap(io; all=true)
+        @test f == [11 for i=1:12]
+    end
+
     @testset "similarto" begin
         r = uuid4()
         io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w",

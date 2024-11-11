@@ -1,6 +1,6 @@
 module CloudSeis
 
-using AbstractStorage, Distributed, JSON, Pkg, Random, TeaSeis, UUIDs
+using AbstractStorage, Distributed, JSON, Pkg, ProgressMeter, Random, TeaSeis, UUIDs
 
 struct TracePropertyDef{T}
     label::String
@@ -1186,6 +1186,18 @@ cache(io::CSeis) = io.cache
 
 partialcache_error() = error("partial caching is only allowed in read-only \"r\" mode")
 
+function read_foldmap!(io::Union{CSeis{T,N,NotACompressor}, CSeis{T,N,LeftJustifyCompressor}}, extentindex::Integer, fmap::Vector{UInt8}; serial=false) where {T,N}
+    try
+        read!(io.extents[extentindex].container, io.extents[extentindex].name, fmap; serial)
+    catch e
+        fmap .= 0
+        if !isa(e, FileDoesNotExistError)
+            throw(e)
+        end
+    end
+    fmap
+end
+
 function cache_foldmap!(io::Union{CSeis{T,N,NotACompressor}, CSeis{T,N,LeftJustifyCompressor}}, extentindex::Integer, force=false) where {T,N}
     io.mode == "r" || partialcache_error()
 
@@ -1196,7 +1208,7 @@ function cache_foldmap!(io::Union{CSeis{T,N,NotACompressor}, CSeis{T,N,LeftJusti
     if isfile(io.extents[extentindex].container, io.extents[extentindex].name)
         @debug "reading foldmap for extent $extentindex from block-storage..."
         t = @elapsed begin
-            io.cache.data = read!(io.extents[extentindex].container, io.extents[extentindex].name, Vector{UInt8}(undef, cachesize_foldmap(io, extentindex)))
+            io.cache.data = read_foldmap!(io, extentindex, Vector{UInt8}(undef, cachesize_foldmap(io, extentindex)))
         end
         mb = length(io.cache.data)/1_000_000
         mbps = mb/t
@@ -1282,7 +1294,67 @@ function foldmap(io::CSeis, extentindex)
     nbytes = sizeof(Int)*length(io.extents[extentindex].frameindices)
     reinterpret(Int, view(io.cache.data, 1:nbytes))
 end
-foldmap(io::CSeis) = foldmap(io, io.cache.extentindex)
+
+function foldmap_from_storage!(extents, extentindex, fmap_extents)
+    extent = extents[extentindex]
+
+    try
+        read!(extent.container, extent.name, fmap_extents[extentindex]; serial=true)
+    catch e
+        fmap_extents[extentindex] .= 0
+        if !isa(e, FileDoesNotExistError)
+            throw(e)
+        end
+    end
+    nothing
+end
+
+function foldmap_all_reshape(io, fmap_extents)
+    fmap = zeros(Int, ntuple(i->size(io,2+i), ndims(io)-2))
+    i2 = 0
+    for (iextent,fmap_extent) in enumerate(fmap_extents)
+        i1 = i2 + 1
+        i2 = i1 + length(io.extents[iextent].frameindices) - 1
+        fmap[i1:i2] .= reinterpret(Int, fmap_extent)
+    end
+    fmap
+end
+
+function foldmap_all(io, nasync, showprogress)
+    nextents = length(io.extents)
+
+    fmap_extents = [zeros(UInt8, sizeof(Int)*length(extent.frameindices)) for extent in io.extents]
+
+    r = 1:nasync:nextents
+    p = Progress(length(r); desc="loading foldmap...", enabled=showprogress)
+    for i in r
+        @sync for extentindex in i:min(i+nasync, nextents)
+            @async read_foldmap!(io, extentindex, fmap_extents[extentindex]; serial=true)
+        end
+        next!(p)
+    end
+
+    foldmap_all_reshape(io, fmap_extents)
+end
+
+"""
+    foldmap(io; all=false, nasync=2048, showprogress=false)
+
+Return the foldmap for either the currently cached extent (if `all=false`)
+or the entire dataset if `all=true`.  If `all=true`, then the operation is
+performed using an asynchronous map over the extents.  The number of asynchronous
+tasks in this map is controled by `nasync`.  Use `showprogress=true` to display
+a progress bar while loading the foldmap.
+"""
+function foldmap(io::CSeis; all=false, nasync=2048, showprogress=false)
+    local fmap
+    if all
+        fmap = foldmap_all(io, nasync, showprogress)
+    else
+        fmap = foldmap(io, io.cache.extentindex)
+    end
+    fmap
+end
 
 unsafe_foldmap(io::CSeis, extentindex) = unsafe_wrap(Array, convert(Ptr{Int}, pointer(io.cache.data)), (length(io.extents[extentindex].frameindices)); own=false)
 unsafe_foldmap(io::CSeis) = unsafe_foldmap(io, io.cache.extentindex)
@@ -2521,6 +2593,7 @@ description!,
 domains,
 fold,
 fold!,
+foldmap,
 geometry,
 getframe,
 getframehdrs,
