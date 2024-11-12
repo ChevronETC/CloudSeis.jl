@@ -31,6 +31,33 @@ function CloudSeis.cache_from_file!(io::CSeis{T,N,BloscCompressor}, extentindex,
     nothing
 end
 
+function CloudSeis.read_foldmap!(io::CSeis{T,N,BloscCompressor}, extentindex::Integer, fmap::Vector{UInt8}; serial=false) where {T,N}
+    @warn "reading a foldmap from a Blosc compressed dataset is not efficient"
+    try
+        cdata = read!(io.extents[extentindex].container, io.extents[extentindex].name, Vector{UInt8}(undef, filesize(io.extents[extentindex].container, io.extents[extentindex].name)); serial)
+        io_cdata = IOBuffer(cdata; read=true, write=false)
+        nbuffers = read(io_cdata, Int)
+        buffersize = read!(io_cdata, Vector{Int}(undef, nbuffers))
+
+        data = UInt8[]
+        nframes = length(io.extents[extentindex].frameindices)
+        nframes_bytes = nframes * sizeof(Int)
+        for ibuffer = 1:nbuffers
+            cbuffer = read!(io_cdata, Vector{UInt8}(undef, buffersize[ibuffer]))
+            data = [data;decompress(UInt8, cbuffer)]
+            if length(data) > nframes_bytes
+                break
+            end
+        end
+        fmap .= data[1:nframes_bytes]
+    catch e
+        fmap .= 0
+        if !isa(e, FileDoesNotExistError)
+            throw(e)
+        end
+    end
+    fmap
+end
 
 function CloudSeis.cache_foldmap!(io::CSeis{T,N,BloscCompressor}, extentindex::Integer, force=false) where {T,N}
     if extentindex == io.cache.extentindex && io.cache.type ∈ (CACHE_ALL,CACHE_ALL_LEFT_JUSTIFY) && !force
@@ -41,7 +68,7 @@ function CloudSeis.cache_foldmap!(io::CSeis{T,N,BloscCompressor}, extentindex::I
     extentindex
 end
 
-function Base.flush(io::CSeis{T,N,BloscCompressor}) where {T,N}
+function Base.flush(io::CSeis{T,N,<:BloscCompressor}) where {T,N}
     if io.cache.extentindex == 0
         return nothing
     end
