@@ -444,6 +444,19 @@ const compressors = Sys.iswindows() ? ("none","blosc","leftjustify","zfp") : ("n
         rm(io)
     end
 
+    @testset "pincs override" begin
+        r = uuid4()
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_pincs=[3.0,-1.0,0.0], compressor=compressor, compressor_options=compressor_options)
+        @test pincs(io,1) ≈ 3.0
+        @test pincs(io,2) ≈ 1.0
+        @test pincs(io,3) ≈ 1.0
+        @test pincs(io)[1] ≈ 3.0
+        @test pincs(io)[2] ≈ 1.0
+        @test pincs(io)[3] ≈ 1.0
+        close(io)
+        rm(io)
+    end
+
     @testset "pstarts" begin
         r = uuid4()
         io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_pstarts=[1.0,2.0,3.0], compressor=compressor, compressor_options=compressor_options)

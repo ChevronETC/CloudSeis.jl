@@ -627,6 +627,11 @@ function csopen_write(containers::Vector{<:Container}, mode; kwargs...)
     axis_lstarts = length(kwargs[:axis_lstarts]) == 0 ? [1 for i=1:ndim] : kwargs[:axis_lstarts]
     axis_lincs = length(kwargs[:axis_lincs]) == 0 ? [1 for i=1:ndim] : kwargs[:axis_lincs]
 
+    if any(axis_pincs .< 1.0)
+        @warn "Warning: Physical deltas less than 1.0 are not permitted, physical delta less than 1.0 are being set to 1.0"
+        axis_pincs[findall(axis_pincs .< 1.0)] .= 1.0
+    end
+
     traceproperties = get_trace_properties(kwargs[:tracepropertydefs], axis_propdefs)
 
     traceformat = kwargs[:traceformat]
