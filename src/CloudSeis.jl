@@ -1657,8 +1657,9 @@ function trcsoffset(io::CSeis, regularize::Bool, extentindex, frameidx)
         ntraces_times_nframes = ntraces*nframes
         ntraces_times_frameidx = ntraces*(frameidx-frstframe)
     else
-        ntraces_times_nframes = mapreduce(frameindex->fold(io,frameindex), +, io.extents[extentindex].frameindices)
-        ntraces_times_frameidx = frstframe == frameidx ? 0 : mapreduce(frameidx->fold(io,frameidx), +, frstframe:(frameidx-1))
+        lidxs = LogicalIndices(io)
+        ntraces_times_nframes = mapreduce(frameindex->fold(io,lidxs[frameindex]), +, io.extents[extentindex].frameindices)
+        ntraces_times_frameidx = frstframe == frameidx ? 0 : mapreduce(frameidx->fold(io,lidxs[frameidx]), +, frstframe:(frameidx-1))
     end
 
     sizeof(Int)*nframes + io.hdrlength*ntraces_times_nframes + sizeof(io.traceformat)*nsamples*ntraces_times_frameidx + 1
@@ -1713,7 +1714,7 @@ unsafe_gettrcs(io::CSeis) = unsafe_gettrcs(io, io.cache.extentindex)
 function getframetrcs(io::CSeis, regularize::Bool, extentindex, idx::Int)
     data = io.cache.data
 
-    ntraces = regularize ? size(io,2) : fold(io,idx)
+    ntraces = regularize ? size(io,2) : fold(io, LogicalIndices(io)[idx])
 
     if ntraces == 0
         return io.traceformat[]
@@ -1729,7 +1730,7 @@ getframetrcs(io::CSeis, regularize::Bool, idx...) = getframetrcs(io, regularize,
 function getframehdrs(io::CSeis, regularize::Bool, extentindex, idx::Int)
     data = io.cache.data
 
-    ntraces = regularize ? size(io,2) : fold(io,idx)
+    ntraces = regularize ? size(io,2) : fold(io, LogicalIndices(io)[idx])
 
     if ntraces == 0
         return UInt8[]
