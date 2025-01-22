@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>CloudSeis.jl · CloudSeis</title><link href="https://fonts.googleapis.com/css?family=Lato|Roboto+Mono" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.0/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.0/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.0/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.11.1/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="assets/documenter.js"></script><script src="siteinfo.js"></script><script src="../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="assets/themes/documenter-dark.css" data-theme-name="documenter-dark"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit">CloudSeis</span></div><form class="docs-search" action="search/"><input class="docs-search-query" id="documenter-search-query" name="q" type="text" placeholder="Search docs"/></form><ul class="docs-menu"><li class="is-active"><a class="tocitem" href>CloudSeis.jl</a><ul class="internal"><li><a class="tocitem" href="#Quick-start-example"><span>Quick start example</span></a></li><li><a class="tocitem" href="#csopen-/-cscreate"><span>csopen / cscreate</span></a></li><li class="toplevel"><a class="tocitem" href="#Read/write-methods"><span>Read/write methods</span></a></li><li class="toplevel"><a class="tocitem" href="#Fold"><span>Fold</span></a></li><li class="toplevel"><a class="tocitem" href="#Alternative-read/write-methods-(N-dimensional-slices)"><span>Alternative read/write methods (N-dimensional slices)</span></a></li><li><a class="tocitem" href="#Alternative-write-methods-for-full-frames"><span>Alternative write methods for full frames</span></a></li><li class="toplevel"><a class="tocitem" href="#Reduction-(aggregation)-of-a-CloudSeis-data-set"><span>Reduction (aggregation) of a CloudSeis data-set</span></a></li><li class="toplevel"><a class="tocitem" href="#Trace-Properties"><span>Trace Properties</span></a></li><li><a class="tocitem" href="#TRC_TYPE"><span>TRC_TYPE</span></a></li><li class="toplevel"><a class="tocitem" href="#Data-properties"><span>Data properties</span></a></li><li class="toplevel"><a class="tocitem" href="#Geometry"><span>Geometry</span></a></li><li class="toplevel"><a class="tocitem" href="#History"><span>History</span></a></li><li class="toplevel"><a class="tocitem" href="#Convenience-methods-and-dictionaries"><span>Convenience methods and dictionaries</span></a></li></ul></li><li><a class="tocitem" href="reference/">Reference</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><nav class="breadcrumb"><ul class="is-hidden-mobile"><li class="is-active"><a href>CloudSeis.jl</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>CloudSeis.jl</a></li></ul></nav><div class="docs-right"><a class="docs-edit-link" href="https://github.com/ChevronETC/CloudSeis.jl/blob/master/docs/src/index.md" title="Edit on GitHub"><span class="docs-icon fab"></span><span class="docs-label is-hidden-touch">Edit on GitHub</span></a><a class="docs-settings-button fas fa-cog" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-sidebar-button fa fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a></div></header><article class="content" id="documenter-page"><h1 id="CloudSeis.jl"><a class="docs-heading-anchor" href="#CloudSeis.jl">CloudSeis.jl</a><a id="CloudSeis.jl-1"></a><a class="docs-heading-anchor-permalink" href="#CloudSeis.jl" title="Permalink"></a></h1><p>CloudSeis.jl is a Julia library for reading and writing CloudSeis files.  The CloudSeis data format is designed to be similar to the JavaSeis[1] data format while adapting to cloud storage (e.g. Azure Blob Storage).  CloudSeis.jl works-a-round cloud storage latency issues using a caching layer.</p><p>[1] https://github.com/ChevronETC/TeaSeis.jl</p><h2 id="Quick-start-example"><a class="docs-heading-anchor" href="#Quick-start-example">Quick start example</a><a id="Quick-start-example-1"></a><a class="docs-heading-anchor-permalink" href="#Quick-start-example" title="Permalink"></a></h2><pre><code class="language-julia"># load the library
+using AzStorage, CloudSeis, FolderStorage
+
+# create a new CloudSeis file from an Azure container.  Use a 3D framework (128 samples per trace, 32 traces per frame, and 16 frames per volume)
+container = AzContainer(&quot;mydataset-cs&quot;; storageaccount=&quot;mystorageaccount&quot;)
+io = csopen(container, &quot;w&quot;, axis_lengths=[128, 32, 16])
+
+# alternatively, create a new CloudSeis file for POSIX storage
+#=
+container = Folder(&quot;filename-cs&quot;)
+io = csopen(container, &quot;w&quot;, axis_lengths=[128, 32, 16])
+=#
+
+# allocate traces and headers for a single frame
+trcs, hdrs = allocframe(io)
+
+# populate trcs and hdrs with values
+for i = 1:size(io,2)
+  set!(prop(io, stockprop[:TRC_TYPE]), hdrs, i, tracetype[:live])
+  set!(prop(io, stockprop[:TRACE]), hdrs, i, i)
+  set!(prop(io, stockprop[:FRAME]), hdrs, i, 1)
+end
+rand!(trcs)
+
+# write trcs,hdrs the data-set
+writeframe(io, trcs, hdrs)
+
+# close the file (this will also flush buffers to block storage as needed)
+close(io)
+
+# open a CloudSeis dataset from an existing container.
+io = csopen(container)
+
+# read the first frame:
+trcs, hdrs = readframe(io, 1) # out-of-place read
+readframe!(io, trcs, hdrs) # in-place read
+
+# access values stored in a trace property in the first trace of the frame
+get(prop(io, stockprop[:TRACE]), hdrs, 1)
+
+# close the file
+close(io)</code></pre><h2 id="csopen-/-cscreate"><a class="docs-heading-anchor" href="#csopen-/-cscreate">csopen / cscreate</a><a id="csopen-/-cscreate-1"></a><a class="docs-heading-anchor-permalink" href="#csopen-/-cscreate" title="Permalink"></a></h2><p>A CloudSeis dataset is created/opened with the <code>csopen</code> or <code>cscreate</code> methods which return a <code>CSeis</code>.  A CloudSeis dataset must have a minimum of 3 dimensions.  For example:</p><pre><code class="language-julia">using AzStorage, CloudSeis
+
+# create a 3D CloudSeis dataset with 10  samples per trace, 11 traces per frame and 12 frames per volume
+container = AzContainer(&quot;mydataset-cs&quot;; storageaccount=&quot;mystorageaccount&quot;)
+io = csopen(container, &quot;w&quot;, axis_lengths=[10,11,12])
+
+# open an existing dataset in read-only model
+io = csopen(container, &quot;r&quot;)
+io = csopen(container) # equivalent to previous line
+
+# open an existing dataset for reading and writing
+io = csopen(container, &quot;r+&quot;)
+
+# close an open dataset
+close(io)
+
+# create a dataset without returning a handle or opening the data
+cscreate(container, axis_lengths=[10,11,12])</code></pre><p>The <code>cscreate</code> method is useful, for example, when you need to create the dataset on the master process and write to it on worker processes.</p><p>It is also possible to pass a list of containers to <code>csopen</code> and <code>cscreate</code>.  In this case the extents are distributed across all containers, and the meta-information is in the first container in the list.  This is, typically, used to manually shard data across multiple Azure storage accounts in order to improve through-put.  For example:</p><pre><code class="language-julia">containers = [AzContainer(&quot;filename-cs&quot;; storageaccount=&quot;mystorageaccount$i&quot;) for i = 1:10]
+io = csopen(containers, &quot;w&quot;, axis_lengths=[10,11,2])</code></pre><p>Note that when opening a data-set that is sharded accross multiple containers in &quot;r&quot; or &quot;r+&quot; modes only the primary container that contains <em>description.json</em> needs to be provided.</p><p><code>csopen</code> and <code>cscreate</code> take a number of keyword arguments to control behavior.  Please see the <strong>reference</strong> section in this documentation for more information.</p><h1 id="Read/write-methods"><a class="docs-heading-anchor" href="#Read/write-methods">Read/write methods</a><a id="Read/write-methods-1"></a><a class="docs-heading-anchor-permalink" href="#Read/write-methods" title="Permalink"></a></h1><p>CloudSeis is a frame based file format.  For <code>io::CSeis</code>, allocate memory for a single frame:</p><pre><code class="language-julia">trcs, hdrs = allocframe(io) # allocate memory for traces and headers for a single frame
+trcs = allocframetrcs(io) # allocate memory for traces for a single frame
+hdrs = allocframehdrs(io) # allocate memory for headers for a single frame</code></pre><p>Read a frame. <code>ifrm::Int</code>, <code>ivol::Int</code>, <code>ihyp::Int</code> and <code>i6::Int</code> must be consistent with the CloudSeis data context.</p><pre><code class="language-julia">trcs, hdrs = readframe(io, ifrm) # read from 3D data
+trcs, hdrs = readframe(io, ifrm, ivol) # read from 4D data
+trcs, hdrs = readframe(io, ifrm, ivol, ihyp) # read from 5D data
+trcs, hdrs = readframe(io, ifrm, ivol, ihyp, i6) # read from 6D data
+...</code></pre><p>Read a frame (in-place) using pre-allocated memory:</p><pre><code class="language-julia">readframe!(io, trcs, hdrs, ifrm)                # read from 3D data
+readframe!(io, trcs, hdrs, ifrm, ivol)          # read from 4D data
+readframe!(io, trcs, hdrs, ifrm, ivol, ihyp)    # read from 5D data
+readframe!(io, trcs, hdrs, ifrm, ivol, ihyp, i6) # read from 6D data
+...</code></pre><p>Similar method exist for reading only headers:</p><pre><code class="language-julia">hdrs = readframehdrs(io, ifrm) # read from 3D data
+hdrs = readframehdrs(io, ifrm, ivol) # read from 4D data
+...
+readframehdrs!(io, hdrs, ifrm) # in-place read from 3D data
+readframehdsr!(io, hdrs, ifrm, ivol) # in-place read from 4D data
+...</code></pre><p>or only traces:</p><pre><code class="language-julia">trcs = readframetrcs(io, ifrm) # read from 3D data
+trcs = readframetrcs(io, ifrm, ivol) # read from 3D data
+...
+readframetrcs!(io, trcs, ifrm) # in-place read from 3D data
+readframetrcs!(io, trcs, ifrm, ivol) # in-place read from 4D dadta
+...</code></pre><p>Write a frame.  The frame, volume, etc. indices are determined from the trace properties.</p><pre><code class="language-julia">writeframe(io, trcs, hdrs)</code></pre><p>To loop over all frames in a dataset of arbitrary dimensions, use <code>LogicalIndices</code>:</p><pre><code class="language-julia">for idx in LogicalIndices(io)
+  trcs, hdrs = readframe(io, idx)
+end</code></pre><p>Of course, this can also be used with <code>readframe!</code>, <code>readframetrcs</code>, <code>readframetrcs!</code>, <code>readframehdrs</code> and <code>readframehdrs!</code>.</p><h1 id="Fold"><a class="docs-heading-anchor" href="#Fold">Fold</a><a id="Fold-1"></a><a class="docs-heading-anchor-permalink" href="#Fold" title="Permalink"></a></h1><p>Methods for finding the fold of a frame</p><pre><code class="language-julia">fold(io, hdrs) # get fold by examining `hdrs` from a frame
+fold(io, ifrm) # get fold for a 3D data-set using the `TraceMap`
+fold(io, ifrm, ivol) # get fold for a 4D data-set using the `TraceMap`
+...</code></pre><h1 id="Alternative-read/write-methods-(N-dimensional-slices)"><a class="docs-heading-anchor" href="#Alternative-read/write-methods-(N-dimensional-slices)">Alternative read/write methods (N-dimensional slices)</a><a id="Alternative-read/write-methods-(N-dimensional-slices)-1"></a><a class="docs-heading-anchor-permalink" href="#Alternative-read/write-methods-(N-dimensional-slices)" title="Permalink"></a></h1><p>We supply convenience methods for reading and writing arbitrary patches of data.</p><p><strong>Reading</strong></p><pre><code class="language-julia">trcs,hdrs = read(io, 1:10, 2:3, 4) # read from 3D dataset (frame 4, traces 2-3 and time samples 1-10)
+trcs,hdrs = read(io, 1:10, 2:3, 4, :) # read from a 4D data-set (all volumes, frame 4, traces 2-3, and time samples 1-10)
+...
+read!(io, trcs, hdrs, 1:10, 2:3, 4) # in-place read from 3D data
+...</code></pre><p>Similar methods exist for reading only traces:</p><pre><code class="language-julia">trcs = readtrcs(io, 1:10, 2:3, 4)
+readtrcs!(io, trcs, 1:10, 2:3, 4) # in-place version of previous line</code></pre><p>and only headers:</p><pre><code class="language-julia">hdrs = readhdrs(io, 1:10, 2:3, 4)
+readhdrs!(io, hdrs, 1:10, 2:3, 4) # in-place version of previous line</code></pre><p><strong>Writing</strong></p><pre><code class="language-julia">write(io, trcs, hdrs) # trcs::Array{Float32,N}, hdrs::Array{UInt8,N} where N&gt;=3
+write(io, trcs, hdrs, 1:10) # same as previous except only time samples 1:10 are written</code></pre><h2 id="Alternative-write-methods-for-full-frames"><a class="docs-heading-anchor" href="#Alternative-write-methods-for-full-frames">Alternative write methods for full frames</a><a id="Alternative-write-methods-for-full-frames-1"></a><a class="docs-heading-anchor-permalink" href="#Alternative-write-methods-for-full-frames" title="Permalink"></a></h2><p>The first set of APIs are for writing one frame at a time:</p><pre><code class="language-julia">writeframe(io, trcs, ifrm) # write to 3D data
+writeframe(io, trcs, ifrm, ivol) # write to 4D data
+...</code></pre><p>The second set of APIs are for writing arbitrary N-dimensional data:</p><pre><code class="language-julia">write(io, trcs, :, 1:10, 3:2:5) # write to 3D data, all samples; traces 1-10; frames 3,5
+write(io, trcs, :, 1:10, 3:2:5, 6) # write to 4D data, all samples; traces 1-10; frames 3,5; volume 6
+...</code></pre><p>Please note that in these forms, the <code>writeframe</code> and <code>write</code> methods will create headers for you, and populate the <code>:TRC_TYPE</code> property along with the properties corresponding to the trace and frame axes of your data.  In the case of 4D data, the volume property is also populated, and in the case of 5D data, the volume and hypercube properties are also populated.</p><p>In addition, please note that in the <code>write</code> method, <code>trcs</code> must have the same number of dimensions as <code>io</code>.  In practice this can be accomplished using <code>reshape</code>. For example if <code>size(io)=(10,20,3)</code> and <code>size(trcs)=(10,)</code>, then to write <code>trcs</code> to the first trace of the first frame of <code>io</code> one could write:</p><pre><code class="language-julia">write(io, rehsape(trcs, 10, 1, 1), :, 1, 1)</code></pre><h1 id="Reduction-(aggregation)-of-a-CloudSeis-data-set"><a class="docs-heading-anchor" href="#Reduction-(aggregation)-of-a-CloudSeis-data-set">Reduction (aggregation) of a CloudSeis data-set</a><a id="Reduction-(aggregation)-of-a-CloudSeis-data-set-1"></a><a class="docs-heading-anchor-permalink" href="#Reduction-(aggregation)-of-a-CloudSeis-data-set" title="Permalink"></a></h1><p>There are scenarios where a CloudSeis data-set will consist of many small extents.  For example, if one is writing a CloudSeis data-set from many parallel processes and where each process is responsible for writing a small amount of data.  Subsequently, one may want to read the data-set from a single instance. In order to avoid latencies in this subsequent read, CloudSeis.jl provides a <code>reduce</code> method that aggregates frames into fewer extents.  For example:</p><pre><code class="language-julia">using Distributed, AzManagers
+addprocs(&quot;cbox16&quot;, 16)
+@everywhere using CloudSeis
+
+# create a data-set with 16 frames and 1 frame per extent
+container = AzContainer(&quot;mydataset-cs&quot;; storageaccount=&quot;mystorageaccount&quot;)
+cscreate(container, &quot;w&quot;, axis_lengths=[100,100,500], extents=[i:i for i=1:16])
+
+# each process writes to its own extent
+@sync for (ipid,pid) in enumerate(workers())
+  @spawnat pid begin
+    io = csopen(Bucket(&quot;test-cs&quot;), &quot;r+&quot;)
+    writeframe(io, rand(Float32,100,100), ipid)
+  end
+end
+
+# reduce the number of extents such that each extent is about 1GB (GCP only)
+reduce(container, mbytes_per_extent=1000)
+
+rmprocs(workers())</code></pre><p>Please see the <strong>reference</strong> section of this documentation for more information.</p><h1 id="Trace-Properties"><a class="docs-heading-anchor" href="#Trace-Properties">Trace Properties</a><a id="Trace-Properties-1"></a><a class="docs-heading-anchor-permalink" href="#Trace-Properties" title="Permalink"></a></h1><p>The CloudSeis data format does not specify any trace properties.  However, there are commonly used (<strong>stock</strong>) properties (see <code>src/stockprops.jl</code>).  It is unusual when a stock property does not suit your needs.  But, if need be, you can define a custom property using the <code>TracePropertyDef</code> constructor:</p><pre><code class="language-julia">pdef = TracePropertyDef(&quot;label&quot;, &quot;description&quot;, Float32)
+pdef = TracePropertyDef(&quot;label&quot;, &quot;description&quot;, Vector{Float32}, 2)</code></pre><p>The arguments to <code>TracePropertyDef</code> are the <code>label</code>, <code>description</code>, <code>type</code>, and, optionally, the <strong>number of elements</strong> stored in the property. The stock properties are defined in <code>src/stockprops.jl</code> using a Julia dictionary: <code>stockprop</code>.  For example, access a stock definition for the <code>TRACE</code> property:</p><pre><code class="language-julia">pdef = stockprop[:TRACE]</code></pre><p>Given a CloudSeis file <code>io::CSeis</code> and a stock definition, we can access the corresponding property of a CloudSeis file:</p><pre><code class="language-julia">p = prop(io, pdef) # access using a `TracePropertyDef`
+p = prop(io, &quot;TRACE&quot;) # alternatively, access using the trace property definition label
+p = prop(io, &quot;TRACE&quot;, Int32) # type-stable version of previous line</code></pre><p>Given, additionally, a frame of headers <code>hdrs::Array{UInt8,2}</code>, we can get and set the values stored in a property:</p><pre><code class="language-julia">@show get(p, hdrs, 1) # get trace property value for the first traces in `hdrs`
+set!(p, hdrs, 1, 5) # set the first header in `hdrs` to 5
+writeframe(io, trcs, hdrs) # the CloudSeis file does not know about the updated header until you call `writeframe`</code></pre><p>In the above code listing <code>trcs</code> is of type <code>Array{Float32,2}</code>.</p><h2 id="TRC_TYPE"><a class="docs-heading-anchor" href="#TRC_TYPE">TRC_TYPE</a><a id="TRC_TYPE-1"></a><a class="docs-heading-anchor-permalink" href="#TRC_TYPE" title="Permalink"></a></h2><p>The <code>TRC_TYPE</code> property is used to indicate if a trace is dead, live or auxiliary within any given frame.  It is stored as an <code>Int</code>.  We provide a second dictionary to map between the <code>Int</code> and human readable code:</p><pre><code class="language-julia">tracetype[:live]
+tracetype[:dead]
+tracetype[:aux]</code></pre><p>For example,</p><pre><code class="language-julia">io = csopen(&quot;file-cs&quot;, &quot;r&quot;)
+trcs, hdrs = readframe(io, 1)
+prop_trctype = prop(io, stockprop[:TRC_TYPE])
+for i=1:size(hdrs,2)
+    if get(prop_trctype, hdrs, i) == tracetype[:live]
+        write(STDOUT, &quot;trace $(i) is a live trace\n&quot;)
+    elseif get(prop_trctype, hdrs, i) == tracetype[:dead]
+        write(STDOUT, &quot;trace $(i) is a dead trace\n&quot;)
+    elseif get(prop_trctype, hdrs, i) == tracetype[:aux]
+        write(STDOUT, &quot;trace $(i) is a aux trace\n&quot;)
+    end
+end
+close(io)</code></pre><h1 id="Data-properties"><a class="docs-heading-anchor" href="#Data-properties">Data properties</a><a id="Data-properties-1"></a><a class="docs-heading-anchor-permalink" href="#Data-properties" title="Permalink"></a></h1><p>CloudSeis.jl provides support for storing custom data properties.  This is accomplished by passing an array of <code>DataProperty</code>&#39;s to the <code>csopen</code> function. For example, a data property could be defined as:</p><pre><code class="language-julia">p = DataProperty(&quot;Survey date&quot;, 120977)</code></pre><h1 id="Geometry"><a class="docs-heading-anchor" href="#Geometry">Geometry</a><a id="Geometry-1"></a><a class="docs-heading-anchor-permalink" href="#Geometry" title="Permalink"></a></h1><p>CloudSeis.jl provides support for storing survey geometry using three-points to define rotated/translated coordinate system.</p><pre><code class="language-julia">geom = Geometry(u1=1,un=2,v1=1,vn=2,w1=1,wn=2,ux=1.0,uy=0.0,uz=0.0,vx=0.0,vy=1.0,vz=0.0,wx=0.0,wy=0.0,wz=1.0)</code></pre><p>where <code>(ox,oy,oz)</code> is the origin, <code>(ux,uy,uz)</code> is a vector to define the end of the <code>u-axis</code> (e.g. cross-line axis), <code>(vx,vy,vz)</code> is the end of the <code>v-axis</code> (e.g. the in-line axis), and <code>(wx,wy,wz)</code> is the end of the <code>w-axis</code> (e.g. the depth axis).  <code>(u1,un)</code> are the first and last bin indices along the <code>u-axis</code>, <code>(v1,vn)</code> are the first and last bin indices along the <code>v-axis</code>, and <code>(w1,wn)</code> are the first and last bin indices along the <code>w-axis</code>.  CloudSeis.jl does not provide any tools for using this geometry to manipulate trace coordinates. I would recommend that this functionality be put into a separate package.</p><h1 id="History"><a class="docs-heading-anchor" href="#History">History</a><a id="History-1"></a><a class="docs-heading-anchor-permalink" href="#History" title="Permalink"></a></h1><p>CloudSeis.jl provides support for storing processing history by recording the input data-set(s) and steps in the processing flow that resulted in a new data-set.  A step is defined as the process (program) that was run as well as the input parameters for that process.  The history is recursive in the sense that the history of input data-sets are embedded.</p><p>Example of creating a new history dictionary:</p><pre><code class="language-julia">h = history!(flow_parameters=Dict(&quot;one&quot;=&gt;1))
+h = history!(h, process=&quot;myprocess1&quot;, process_parameters=Dict(&quot;two&quot;=&gt;2,&quot;three&quot;=&gt;3))
+h = history!(h, process=&quot;myprocess2&quot;, process_parameters=Dict(&quot;four&quot;=&gt;4,&quot;five&quot;=&gt;5))</code></pre><p>We can then use that history in the construction of a new CloudSeis data-set,</p><pre><code class="language-julia">io = csopen(Folder(&quot;file-1-cs&quot;), &quot;w&quot;, axis_lengths=[12,11,10], history=h)
+history(io) # outputs the history as a dictionary
+close(io)</code></pre><p>Finally, we can embed the history of <code>file-1-cs</code> into a new data-set,</p><pre><code class="language-julia">io = csopen(Folder(&quot;file-1-cs&quot;))
+h = history!(process=&quot;myprocess3&quot;, process_parameters=Dict(&quot;eight&quot;=&gt;8,&quot;nine&quot;=&gt;9), histories = [Folder(&quot;file-1-cs&quot;)])
+close(io)
+io = csopen(Folder(&quot;file-2-cs&quot;), &quot;w&quot;; axis_lengths=[12,11,10], history=h)
+using JSON
+print(json(history(io), 1))</code></pre><p>Then the history structure is:</p><pre><code class="language-json">{
+ &quot;flow&quot;: {
+  &quot;parameters&quot;: {},
+  &quot;processes&quot;: [
+   {
+    &quot;parameters&quot;: {
+     &quot;eight&quot;: 8,
+     &quot;nine&quot;: 9
+    },
+    &quot;process&quot;: &quot;myprocess3&quot;
+   }
+  ]
+ },
+ &quot;inputs&quot;: [
+  {
+   &quot;history&quot;: {
+    &quot;flow&quot;: {
+     &quot;parameters&quot;: {
+      &quot;one&quot;: 1
+     },
+     &quot;processes&quot;: [
+      {
+       &quot;parameters&quot;: {
+        &quot;two&quot;: 2,
+        &quot;three&quot;: 3
+       },
+       &quot;process&quot;: &quot;myprocess1&quot;
+      },
+      {
+       &quot;parameters&quot;: {
+        &quot;four&quot;: 4,
+        &quot;five&quot;: 5
+       },
+       &quot;process&quot;: &quot;myprocess2&quot;
+      }
+     ]
+    }
+   },
+   &quot;container&quot;: {
+    &quot;foldername&quot;: &quot;/home/tqff/.julia/dev/CloudSeis/file-1-cs&quot;
+   }
+  }
+ ]
+}</code></pre><h1 id="Convenience-methods-and-dictionaries"><a class="docs-heading-anchor" href="#Convenience-methods-and-dictionaries">Convenience methods and dictionaries</a><a id="Convenience-methods-and-dictionaries-1"></a><a class="docs-heading-anchor-permalink" href="#Convenience-methods-and-dictionaries" title="Permalink"></a></h1><p>For convenience and consistency, we supply several dictionaries.  In addition to the dictionary for trace property definitions and trace type (both described above), there are dictionaries for <strong>data domain</strong> <code>stockdomain</code>, <strong>units</strong> <code>stockunit</code>, and <strong>data type</strong> <code>stockdatatype</code>.  All of these are listed in <code>src\stockprops.jl</code>.</p><p>Example usage within the csopen method:</p><pre><code class="language-julia">io = csopen(Bucket(&quot;file-cs&quot;), &quot;w&quot;, axis_lengths=[12,11,10], axis_units=[stockunit[:SECONDS], stockunit[:METERS], stockunit[:METERS]], axis_domains=[stockdomain[:TIME], stockdomain[:SPACE], stockdomain[:SPACE], datatype=stockdatatype[:SOURCE])</code></pre><p>Several convenience methods are supplied for querying <code>io::CSeis</code>:</p><pre><code class="language-julia">ndims(io)              # returns `Int`, number of dimensions in the CloudSeis dataset
+length(io)             # returns `Int`, the number of frames in the CloudSeis dataset, equivalent to `prod(size(io)[3:end])`
+size(io)               # returns `NTuple{Int}`, size of CloudSeis dataset
+size(io,i)             # returns `Int`, size of CloudSeis dataset along dimension `i::Int`
+props(io)              # returns `NTuple{TraceProperty}`, trace property along all dimensions
+props(io,i)            # returns `TraceProperty`, trace property along dimension `i::Int`
+propdefs(io)           # returns `NTuple{TracePropertyDef}`, trace property definition along all dimensions
+propdefs(io,i)         # returns `TracePropertyDef`, trace property along dimension `i::Int`
+units(io)              # returns `NTuple{String}`, units along all dimensions
+units(io,i)            # returns `String, unit along dimension `i::Int`
+domains(io)            # returns `NTuple{String}`, data domains along all dimensions
+domains(io,i)          # returns `String`, data domain along dimension `i::Int`
+pstarts(io)            # returns `NTuple{Float64}`, physical starts along all dimensions
+pstarts(io,i)          # returns `Float64`, physical start along dimension `i::Int`
+pincs(io)              # returns `NTuple{Float64}`, physical increments along all dimensions
+pincs(io,i)            # returns `Float64`, physical increment along dimension `i::Int`
+lstarts(io)            # returns `NTuple{Int}`, logical starts along all dimensions
+lstarts(io,i)          # returns `Int`, logical start along dimension `i::Int`
+lincs(io)              # returns `NTuple{Int}`, logical increments along all dimensions
+lincs(io,i)            # returns `Int`, logical increment along dimension `i::Int`
+in(prop,io)            # returns true if the trace property `prop` exists in `io` --  `prop` can be of types `::TraceProperty`, `::TracePropertyDef`, or `::String`
+dataproperty(io,nm)    # returns the value held in the data property: `nm::String`
+hasdataproperty(io,nm) # returns true if the data property corresponding to label `nm::String` is in `io::CSeis`
+geometry(io)           # returns `Geometry`, the stored geometry of the dataset.  If no geometry is stored, `nothing` is returned</code></pre><p>Convenience methods are supplied for manipulating <code>io::CSeis</code>:</p><pre><code class="language-julia">rm(io) # remove (delete) the file and all of its extent files and secondary folders
+empty!(io)  # remove extends and secondary folders, but keep meta-data
+cp(src, dst) # create a new CloudSeis file `dst::AbstractString` that is a copy of `src::CSeis`, optional named argument: `secondaries=` - change file extents location
+mv(src, dst)  # move a CloudSeis file to `dst::AbstractString` from `src::CSeis`, optional named argument: `secondaries=` - change file extents location
+copy!(io, hdrs, io1, hdrs1) # (not-implemented) copy values from `hdrs1::Array{UInt8,2}` to `hdrs::Array{UInt8,2}`
+reduce(io::CSeis[; mbytes_per_extent=1000, frames_per_extent=0, maxinstances=100, instancetemplate=&quot;jbox08&quot;, instancegroup=&quot;jbox&quot;, retries=0, maxerrors=Inf]) # reduce the number of extents used to store data, GCP only</code></pre></article><nav class="docs-footer"><a class="docs-footer-nextpage" href="reference/">Reference »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> on <span class="colophon-date" title="Wednesday 22 January 2025 19:26">Wednesday 22 January 2025</span>. Using Julia version 1.11.3.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
