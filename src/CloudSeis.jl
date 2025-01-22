@@ -1674,7 +1674,8 @@ function hdrsoffset(io::CSeis, regularize::Bool, extentindex, frameidx)
     if regularize
         ntraces_times_frameidx = ntraces*(frameidx-frstframe)
     else
-        ntraces_times_frameidx = frstframe == frameidx ? 0 : mapreduce(_frameidx->fold(io,_frameidx), +, frstframe:(frameidx-1))
+        lidxs = LogicalIndices(io)
+        ntraces_times_frameidx = frstframe == frameidx ? 0 : mapreduce(_frameidx->fold(io,lidxs[_frameidx]), +, frstframe:(frameidx-1))
     end
 
     offset = sizeof(Int)*nframes + io.hdrlength*ntraces_times_frameidx + 1
