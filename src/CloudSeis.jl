@@ -41,6 +41,12 @@ mutable struct Geometry
     vn::Int
     w1::Int
     wn::Int
+    umin::Float64
+    umax::Float64
+    vmin::Float64
+    vmax::Float64
+    wmin::Float64
+    wmax::Float64
     ox::Float64
     oy::Float64
     oz::Float64
@@ -82,6 +88,9 @@ space.
 * `u1=1,un=2` integer end-points (u axis) that can be used to describe a grid (e.g. for finite difference)
 * `v1=1,vn=2` integer end-points (v axis) that can be used to describe a grid (e.g. for finite difference)
 * `w1=1,wn=2` integer end-points (w axis) that can be used to describe a grid (e.g. for finite difference)
+* `umin=0.0,umax=1.0` portion of geometry (u axis) that is used for the model
+* `vmin=0.0,vmax=1.0` portion of geometry (v axis) that is used for the model
+* `wmin=0.0,wmax=1.0` portion of geometry (w axis) that is used for the model
 * `x_direction="east"` compass direction that 'x' is parallel to
 * `y_direction="north"` compass direction that 'y' is parallel to
 * `z_direction="depth"` compass direction that 'z' is parallel to
@@ -92,6 +101,8 @@ space.
 # notes
 * this method does not check to see if the u,v,w vectors are orthogonal
 * for models that do not required azimuthal anisotropy (e.g. isotropic, VTI), it is convenient to set `tti_azimumth_positive_direction` and `tti_azimuth_origin_axis` to "unknown"
+* `umin,umax,vmin,vmax,wmin,wmax` are used when a sub- or super-set of u,v,w descibe the model domain.  For example, if the magnitude of `(ux,uy,uz)` is the length of a single
+model grid cell, then `umin=0` and `umax=(nu-1)` would be appropriate.
 """
 function Geometry(;
         ox=0.0,oy=0.0,oz=0.0,
@@ -101,6 +112,9 @@ function Geometry(;
         u1=1,un=2,
         v1=1,vn=2,
         w1=1,wn=2,
+        umin=0.0,umax=1.0,
+        vmin=0.0,vmax=1.0,
+        wmin=0.0,wmax=1.0,
         x_direction = "east",
         y_direction = "north",
         z_direction = "depth",
@@ -115,7 +129,7 @@ function Geometry(;
     tti_azimuth_positive_direction ∈ ("clockwise", "counter clockwise", "unknown") || error("'tti_azimuth_rotation' must be one of (\"clockwise\",\"counter clockwise\", \"unknown\")")
     tti_azimuth_origin_axis ∈ ("x", "-x", "y", "-y", "u", "-u", "v", "-v", "w", "-w", "unknown") || error("'tti_azimuth_origin_axis' must be one of (\"x\", \"-x\", \"y\", \"-y\", \"u\", \"-u\", \"v\", \"-v\", \"w\", \"-w\", \"unknown\")")
     tti_symmetry_axis_z_direction ∈ ("elevation","depth","unknown") || error("`tti_symmetry_axis_z_direction` must be one of (\"elevation\", \"depth\", or \"unknown\") ")
-    Geometry(u1,un,v1,vn,w1,wn,ox,oy,oz,ux,uy,uz,vx,vy,vz,wx,wy,wz,x_direction,y_direction,z_direction,tti_angle_units,tti_azimuth_positive_direction,tti_azimuth_origin_axis,tti_symmetry_axis_z_direction,1,1,1)
+    Geometry(u1,un,v1,vn,w1,wn,umin,umax,vmin,vmax,wmin,wmax,ox,oy,oz,ux,uy,uz,vx,vy,vz,wx,wy,wz,x_direction,y_direction,z_direction,tti_angle_units,tti_azimuth_positive_direction,tti_azimuth_origin_axis,tti_symmetry_axis_z_direction,1,1,1)
 end
 
 Base.Dict(g::Geometry) = Dict(
@@ -126,6 +140,9 @@ Base.Dict(g::Geometry) = Dict(
     "u1"=>g.u1, "un"=>g.un,
     "v1"=>g.v1, "vn"=>g.vn,
     "w1"=>g.w1, "wn"=>g.wn,
+    "umin"=>g.umin, "umax"=>g.umax,
+    "vmin"=>g.vmin, "vmax"=>g.vmax,
+    "wmin"=>g.wmin, "wmax"=>g.wmax,
     "x_direction"=>g.x_direction,
     "y_direction"=>g.y_direction,
     "z_direction"=>g.z_direction,
@@ -1035,6 +1052,9 @@ function get_geometry(description::Dict)
 
     Geometry(
         c["u1"],c["un"],c["v1"],c["vn"],c["w1"],c["wn"],
+        get(c, "umin", 0.0), get(c, "umax", 0.0),
+        get(c, "vmin", 0.0), get(c, "vmax", 0.0),
+        get(c, "wmin", 0.0), get(c, "wmax", 0.0),
         c["ox"],c["oy"],c["oz"],c["ux"],c["uy"],c["uz"],
         c["vx"],c["vy"],c["vz"],c["wx"],c["wy"],c["wz"],
         haskey(c, "x_direction") ? c["x_direction"] : "unknown",
