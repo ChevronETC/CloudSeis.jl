@@ -527,6 +527,9 @@ const compressors = Sys.iswindows() ? ("none","blosc","leftjustify","zfp") : ("n
             u1=1,un=2,
             v1=1,vn=4,
             w1=1,wn=6,
+            umin = 0.0, umax = 10.0,
+            vmin = 1.0, vmax = 11.0,
+            wmin = 2.0, wmax = 12.0,
             x_direction=x_direction,
             y_direction=y_direction,
             z_direction=z_direction,
@@ -558,6 +561,12 @@ const compressors = Sys.iswindows() ? ("none","blosc","leftjustify","zfp") : ("n
         @test _g.vn === g.vn
         @test _g.w1 === g.w1
         @test _g.wn === g.wn
+        @test _g.umin ≈ 0.0
+        @test _g.umax ≈ 10.0
+        @test _g.vmin ≈ 1.0
+        @test _g.vmax ≈ 11.0
+        @test _g.wmin ≈ 2.0
+        @test _g.wmax ≈ 12.0
         @test _g.x_direction == g.x_direction
         @test _g.y_direction == g.y_direction
         @test _g.z_direction == g.z_direction
@@ -605,6 +614,12 @@ const compressors = Sys.iswindows() ? ("none","blosc","leftjustify","zfp") : ("n
             @test _g.vn === g.vn
             @test _g.w1 === g.w1
             @test _g.wn === g.wn
+            @test _g.umin ≈ 0
+            @test _g.umax ≈ 1
+            @test _g.vmin ≈ 0
+            @test _g.vmax ≈ 1
+            @test _g.wmin ≈ 0
+            @test _g.wmax ≈ 1
             close(io)
             rm(io)
 
