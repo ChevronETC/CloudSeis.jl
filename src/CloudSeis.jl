@@ -886,6 +886,23 @@ Delete a CloudSeis data-set.
 """
 Base.rm(io::CSeis) = rm.(io.containers)
 
+"""
+    iscsdata(c::Container)
+
+Returns true if the container contains CloudSeis data-set, and false otherwise.
+"""
+function iscsdata(c::Container)
+    isdir(c) || return false
+    isfile(joinpath(c, "description.json")) || return false
+
+    description = read_description(c)
+    haskey(description, "fileproperties") || return false
+
+    return true
+end
+
+iscsdata(c::AbstractArray) = iscsdata(c[1])
+
 function robust_rm(containers::Vector{<:Container})
     for container in containers
         try
@@ -2626,6 +2643,7 @@ cscreate,
 csopen,
 hasdataproperty,
 headerlength,
+iscsdata,
 lincs,
 lstarts,
 pincs,
