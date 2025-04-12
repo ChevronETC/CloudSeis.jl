@@ -1416,3 +1416,35 @@ end
 
     rm(io)
 end
+
+@testset "iscsdata" for cloud in clouds
+    container = mkcontainer(cloud, "test-$(uuid4())-cs")
+    io = csopen_robust(container, "w", axis_lengths=[10,12,20])
+    close(io)
+
+    @test iscsdata(container)
+    rm(io)
+
+    container = mkcontainer(cloud, "test-$(uuid4())-cs")
+    @test !iscsdata(container)
+
+    if isa(container, Vector)
+        mkpath.(container)
+    else
+        mkpath(container)
+    end
+    @test !iscsdata(container)
+
+    if isa(container, Vector)
+        write(container[1], "description.json", """{"foo": "bar"}""")
+    else
+        write(container, "description.json", """{"foo": "bar"}""")
+    end
+    @test !iscsdata(container)
+
+    if isa(container, Vector)
+        rm.(container)
+    else
+        rm(container)
+    end
+end
