@@ -1069,9 +1069,9 @@ function get_geometry(description::Dict)
 
     Geometry(
         c["u1"],c["un"],c["v1"],c["vn"],c["w1"],c["wn"],
-        get(c, "umin", 0.0), get(c, "umax", 0.0),
-        get(c, "vmin", 0.0), get(c, "vmax", 0.0),
-        get(c, "wmin", 0.0), get(c, "wmax", 0.0),
+        get(c, "umin", 0.0), get(c, "umax", 1.0),
+        get(c, "vmin", 0.0), get(c, "vmax", 1.0),
+        get(c, "wmin", 0.0), get(c, "wmax", 1.0),
         c["ox"],c["oy"],c["oz"],c["ux"],c["uy"],c["uz"],
         c["vx"],c["vy"],c["vz"],c["wx"],c["wy"],c["wz"],
         haskey(c, "x_direction") ? c["x_direction"] : "unknown",
