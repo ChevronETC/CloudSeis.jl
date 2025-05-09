@@ -341,6 +341,15 @@ For example, a data property could be defined as:
 p = DataProperty("Survey date", 120977)
 ```
 
+# Mutating a dataset description
+A limited subset of a dataset description can me mutated after the dataset is created.  For example,
+consider a dataset of size `10,11,12,2`. We can change the size of its 4th dimension, and add new
+data properties:
+```julia
+io = csopen(Folder("file-cs", "r+"))
+description!(io, axis_lengths=[10,11,12,4], dataproperties_add=[DataProperty("x"=>1)])
+```
+
 # Geometry
 
 CloudSeis.jl provides support for storing survey geometry using three-points to
