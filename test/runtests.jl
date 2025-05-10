@@ -1333,7 +1333,7 @@ end
 
 @testset "mutate the description of a CloudSeis dataset" for cloud in clouds
     container = mkcontainer(cloud, "test-$(uuid4())-cs")
-    io = csopen_robust(container, "w", axis_lengths=[10,12,20,2], frames_per_extent=10)
+    io = csopen_robust(container, "w", axis_lengths=[10,12,20,2], frames_per_extent=10, dataproperties=[DataProperty("v",1), DataProperty("ρ",2)])
     n1,n2 = 10,12
     for i4 = 1:2, i3 = 1:20
         writeframe(io, i4*i3*ones(n1,n2), i3, i4)
@@ -1341,14 +1341,18 @@ end
     close(io)
 
     io = csopen_robust(container, "r+")
-    
+
     @test_throws ErrorException description!(io, axis_lengths=[10,12,21,4])
 
-    description!(io, axis_lengths=[10,12,20,4])
+    description!(io, axis_lengths=[10,12,20,4], dataproperties=[DataProperty("v",1), DataProperty("ρ",2), DataProperty("vs",3), DataProperty("epsilon",4)])
     close(io)
 
     io = csopen_robust(container, "r")
     @test size(io) == (10,12,20,4)
+    @test dataproperty(io, "v") == 1
+    @test dataproperty(io, "ρ") == 2
+    @test dataproperty(io, "vs") == 3
+    @test dataproperty(io, "epsilon") == 4
     for i4 = 1:2, i3 = 1:20
         t = readframetrcs(io, i3, i4)
         @test t ≈ i4*i3*ones(n1,n2)
@@ -1356,6 +1360,23 @@ end
     for i4 = 3:4, i3=1:20
         @test fold(io, i3, i4) == 0
     end
+
+    io = csopen_robust(container, "w", axis_lengths=[10,12,20,2], frames_per_extent=10, dataproperties=[DataProperty("v",1), DataProperty("ρ",2)])
+    n1,n2 = 10,12
+    for i4 = 1:2, i3 = 1:20
+        writeframe(io, i4*i3*ones(n1,n2), i3, i4)
+    end
+    close(io)
+
+    io = csopen_robust(container, "r+")
+    description!(io, axis_lengths=[10,12,20,4], dataproperties_add=[DataProperty("vs",3), DataProperty("epsilon",4)])
+
+    io = csopen_robust(container, "r")
+    @test size(io) == (10,12,20,4)
+    @test dataproperty(io, "v") == 1
+    @test dataproperty(io, "ρ") == 2
+    @test dataproperty(io, "vs") == 3
+    @test dataproperty(io, "epsilon") == 4
 
     rm(io)
 end
