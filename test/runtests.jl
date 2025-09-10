@@ -1469,3 +1469,30 @@ end
         rm(container)
     end
 end
+
+@testset "header length test" for cloud in clouds
+    # tests headerlength(traceproperties::NamedTuple, multipleof=1) function
+    # it is specifially used for zfp/cvx compression where the header length
+    # must be a multiple of 4 bytes
+
+    container = mkcontainer(cloud, "test-$(uuid4())-cs")
+
+    custom = TracePropertyDef("MyLabel", "MyDescription", Vector{UInt8}, 1)
+    my_trace_props = [stockprop[:SAMPLE], stockprop[:TRACE], stockprop[:FRAME], stockprop[:TRC_TYPE], custom]
+
+    io = csopen_robust(container, "w", axis_lengths=[4,3,2], compressor="zfp", tracepropertydefs=my_trace_props)
+
+    @test headerlength(io) == 20
+
+    trcs = allocframetrcs(io)
+
+    rand!(trcs)
+    writeframe(io, trcs, 1)
+
+    #test if flushing will not error out
+    @test_nowarn flush(io)
+
+    headerle
+    close(io)
+    rm(io)
+end

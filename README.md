@@ -8,6 +8,9 @@ CloudSeis.jl is a Julia library for reading and writing CloudSeis files.  The
 CloudSeis data-format is designed to be similar to the JavaSeis data format while
 adapting to cloud storage (e.g. Azure Blob storage).
 
+### Debug
+Make sure to update packages in Pkg if you're having dependency issues.
+
 [docs-dev-img]: https://img.shields.io/badge/docs-dev-blue.svg
 [docs-dev-url]: https://chevronetc.github.io/CloudSeis.jl/dev/
 
