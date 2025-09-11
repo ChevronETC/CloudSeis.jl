@@ -1492,7 +1492,6 @@ end
     #test if flushing will not error out
     @test_nowarn flush(io)
 
-    headerle
     close(io)
     rm(io)
 end
