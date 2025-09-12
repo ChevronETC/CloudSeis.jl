@@ -2325,11 +2325,15 @@ via an asynchronous task.
 The `cp` method will be executed on the set of machines defined by `workers`.  Note that the
 work will be sent to the workers one batch at a time.
 """
-function Base.cp(src::CSeis, dst_containers::Vector{<:Container}, extents=Colon(); batch_size=32, workers=Distributed.workers)
+function Base.cp(src::CSeis{T,N,Z,C}, dst_containers::Vector{<:Container}, extents=Colon(); batch_size=32, workers=Distributed.workers) where {T,N,Z,C<:Container}
     description = read_description(src)
 
-    d_src_containers = dcontainer_add_prefix.(minimaldict.(src.containers)) # dcontainer_add_prefix is for backwards compatability
-    src_extents = [Extent(description["extents"][iextent], src.containers, d_src_containers) for iextent in eachindex(description["extents"])]
+    # get a list of unique containers from the extents of `src`.
+    d_src_containers = unique([extent["container"] for extent in description["extents"]])
+    dcontainer_add_prefix.(d_src_containers) # for backwards compatability
+    src_containers = [Container(C, d_src_container, session(src.containers[1])) for d_src_container in d_src_containers]
+
+    src_extents = [Extent(description["extents"][iextent], src_containers, d_src_containers) for iextent in eachindex(description["extents"])]
     dst_extents = similar(src_extents)
 
     for iextent in eachindex(description["extents"])
