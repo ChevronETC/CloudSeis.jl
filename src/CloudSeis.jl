@@ -922,13 +922,19 @@ function Base.show(io::IO, cs::CSeis)
     write(io, "\taxis properties: $(ntuple(i->cs.axis_propdefs[i].label, length(cs.axis_propdefs)))");
 end
 
+"""
+    headerlength(traceproperties::NamedTuple, multipleof=1)
+
+Returns the length for a header based on the trace properties passed in.
+The returned header length is rounded up to the nearest multiple of `multipleof`.
+"""
 function headerlength(traceproperties::NamedTuple, multipleof=1)
     hdrlength = 0
     for traceproperty in traceproperties
         hdrlength += sizeof(eltype(traceproperty.def.format))*traceproperty.def.elementcount
     end
-    r = rem(hdrlength, multipleof)
-    hdrlength + r
+
+    ceil(Int, hdrlength/multipleof) * multipleof
 end
 """
     headerlength(io::CSeis)
