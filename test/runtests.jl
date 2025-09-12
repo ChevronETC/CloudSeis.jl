@@ -794,6 +794,26 @@ const compressors = Sys.iswindows() ? ("none","blosc","leftjustify","zfp") : ("n
         rm(iocp)
     end
 
+    if cloud == Azure2
+        @testset "cp multi extent source to single extent dest" begin
+            r = uuid4()
+            io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,50], frames_per_extent=10, compressor=compressor, compressor_options=compressor_options)
+            x = rand(Float32,10,11,50)
+            write(io, x, :, :, :)
+            close(io)
+            r = lowercase(randstring('a':'z',6))
+
+            r2 = uuid4()
+            c = mkcontainer(Azure, "test-$r2-cs")
+            cp(io, c)
+            rm(io)
+
+            iocp = csopen(c)
+            @test readtrcs(iocp, :, :, :) ≈ x rtol=rtol
+            rm(iocp)
+        end
+    end
+
     @testset "cp, parallel" begin
         r = uuid4()
         io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,50], frames_per_extent=10, compressor=compressor, compressor_options=compressor_options)
