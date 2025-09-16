@@ -2266,13 +2266,14 @@ Limited mutation of the properties of an existing CloudSeis dataset.
 * `axis_lengths = nothing`  Grow the size of the axis lengths (3rd dimension and higher)[1].
 * `dataproperties = nothing` Replace the data properties of the dataset with `dataproperties`.[2]
 * `dataproperties_add = nothing` Add to the data properties of the dataset with `dataproperties_add`.[2]
+* `geometry = nothing` replace the geometry of the dataset with `geometry`.
 
 # Notes
 * [1] `axis_lengths` must be the same length as `size(io)`.  In addition, `prod(axis_lengths[3:end])`
 must be greater than `prod(size(io)[3:end])` and `axis_lengths[i]` must equal `size(io,i)` for i∈(1..ndims(io)-1).
 * [2] only one of `dataproperties` or `dataproperties_add` can be specified.
 """
-function description!(io::CSeis; axis_lengths=nothing, dataproperties=nothing, dataproperties_add=nothing)
+function description!(io::CSeis; axis_lengths=nothing, dataproperties=nothing, dataproperties_add=nothing, geometry=nothing)
     io.mode == "r+" || error("mutation is only availabe for data-sets open in 'r+' mode.")
     dataproperties !== nothing && dataproperties_add !== nothing && error("only one of 'dataproperties' or 'dataproperties_add' can be specified.")
 
@@ -2289,6 +2290,10 @@ function description!(io::CSeis; axis_lengths=nothing, dataproperties=nothing, d
 
     if dataproperties_add !== nothing
         description["dataproperties"] = merge(description["dataproperties"], mapreduce(Dict, merge, dataproperties_add))
+    end
+
+    if geometry !== nothing
+        description["geometry"] = geometry
     end
 
     write_description(io, description)
