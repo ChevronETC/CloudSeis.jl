@@ -1401,6 +1401,88 @@ end
     rm(io)
 end
 
+@testset "mutate the geometry of a CloudSeis dataset" for cloud in clouds
+    container = mkcontainer(cloud, "test-$(uuid4())-cs")
+    
+    # Create dataset with initial geometry
+    original_geometry = Geometry(
+        ox = 0.0, oy = 0.0, oz = 0.0,
+        ux = 0.0, uy = 0.0, uz = 1.0,
+        vx = 1.0, vy = 0.0, vz = 0.0,
+        wx = 0.0, wy = 1.0, wz = 0.0,
+        u1 = 1, un = 10, v1 = 1, vn = 12, w1 = 1, wn = 20
+    )
+    
+    io = csopen_robust(container, "w", 
+        axis_lengths=[10,12,20,1], 
+        frames_per_extent=10, 
+        dataproperties=[DataProperty("v",1)], 
+        geometry=original_geometry)
+    
+    n1,n2 = 10,12
+    for i3 = 1:20
+        writeframe(io, i3*ones(n1,n2), i3, 1)
+    end
+    close(io)
+
+    # Verify original geometry
+    io = csopen_robust(container, "r")
+    orig_geom = geometry(io)
+    @test orig_geom.ox == 0.0
+    @test orig_geom.oy == 0.0
+    @test orig_geom.oz == 0.0
+    @test orig_geom.ux == 0.0
+    @test orig_geom.uy == 0.0
+    @test orig_geom.uz == 1.0
+    @test orig_geom.vx == 1.0
+    @test orig_geom.vy == 0.0
+    @test orig_geom.vz == 0.0
+    @test orig_geom.wx == 0.0
+    @test orig_geom.wy == 1.0
+    @test orig_geom.wz == 0.0
+    close(io)
+
+    # Mutate the geometry
+    new_geometry = Geometry(
+        ox = 100.0, oy = 200.0, oz = 300.0,
+        ux = 1.0, uy = 0.0, uz = 0.0,
+        vx = 0.0, vy = 1.0, vz = 0.0,
+        wx = 0.0, wy = 0.0, wz = 1.0,
+        u1 = 1, un = 10, v1 = 1, vn = 12, w1 = 1, wn = 20
+    )
+    
+    io = csopen_robust(container, "r+")
+    description!(io, geometry=new_geometry)
+    close(io)
+
+    # Verify the geometry was updated
+    io = csopen_robust(container, "r")
+    updated_geom = geometry(io)
+    @test updated_geom.ox == 100.0
+    @test updated_geom.oy == 200.0
+    @test updated_geom.oz == 300.0
+    @test updated_geom.ux == 1.0
+    @test updated_geom.uy == 0.0
+    @test updated_geom.uz == 0.0
+    @test updated_geom.vx == 0.0
+    @test updated_geom.vy == 1.0
+    @test updated_geom.vz == 0.0
+    @test updated_geom.wx == 0.0
+    @test updated_geom.wy == 0.0
+    @test updated_geom.wz == 1.0
+
+    # Verify data integrity is preserved
+    @test size(io) == (10,12,20,1)
+    @test dataproperty(io, "v") == 1
+    for i3 = 1:20
+        t = readframetrcs(io, i3, 1)
+        @test t ≈ i3*ones(n1,n2)
+    end
+    
+    close(io)
+    rm(io)
+end
+
 @testset "history construction and access" for cloud in clouds
     x = history!(
         process = "myprocess1",
