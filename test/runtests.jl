@@ -1397,6 +1397,16 @@ end
     @test dataproperty(io, "ρ") == 2
     @test dataproperty(io, "vs") == 3
     @test dataproperty(io, "epsilon") == 4
+    close(io)
+
+    io = csopen_robust(container, "r+")
+    @test domains(io) == (stockdomain[:UNKNOWN], stockdomain[:UNKNOWN], stockdomain[:UNKNOWN], stockdomain[:UNKNOWN])
+    @test units(io) == (stockunit[:UNKNOWN], stockunit[:UNKNOWN], stockunit[:UNKNOWN], stockunit[:UNKNOWN])
+    description!(io, axis_domains = [stockdomain[:TIME], stockdomain[:SPACE], stockdomain[:SPACE], stockdomain[:UNKNOWN]], axis_units = [stockunit[:S], stockunit[:M], stockunit[:M], stockunit[:UNKNOWN]])
+    close(io)
+    io = csopen_robust(container, "r")
+    @test domains(io) == (stockdomain[:TIME], stockdomain[:SPACE], stockdomain[:SPACE], stockdomain[:UNKNOWN])
+    @test units(io) == (stockunit[:S], stockunit[:M], stockunit[:M], stockunit[:UNKNOWN])
 
     rm(io)
 end

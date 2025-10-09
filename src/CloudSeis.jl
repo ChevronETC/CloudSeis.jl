@@ -2270,6 +2270,8 @@ Limited mutation of the properties of an existing CloudSeis dataset.
 
 # Optional key-word arguments
 * `axis_lengths = nothing`  Grow the size of the axis lengths (3rd dimension and higher)[1].
+* `axis_domains = nothing` Replace the axis domains of the dataset with `axis_domains`.
+* `axis_units = nothing` Replace the axis units of the dataset with `axis_units`.
 * `dataproperties = nothing` Replace the data properties of the dataset with `dataproperties`.[2]
 * `dataproperties_add = nothing` Add to the data properties of the dataset with `dataproperties_add`.[2]
 * `geometry = nothing` replace the geometry of the dataset with `geometry`.
@@ -2279,7 +2281,7 @@ Limited mutation of the properties of an existing CloudSeis dataset.
 must be greater than `prod(size(io)[3:end])` and `axis_lengths[i]` must equal `size(io,i)` for i∈(1..ndims(io)-1).
 * [2] only one of `dataproperties` or `dataproperties_add` can be specified.
 """
-function description!(io::CSeis; axis_lengths=nothing, dataproperties=nothing, dataproperties_add=nothing, geometry=nothing)
+function description!(io::CSeis; axis_domains=nothing, axis_units=nothing, axis_lengths=nothing, dataproperties=nothing, dataproperties_add=nothing, geometry=nothing)
     io.mode == "r+" || error("mutation is only availabe for data-sets open in 'r+' mode.")
     dataproperties !== nothing && dataproperties_add !== nothing && error("only one of 'dataproperties' or 'dataproperties_add' can be specified.")
 
@@ -2289,6 +2291,15 @@ function description!(io::CSeis; axis_lengths=nothing, dataproperties=nothing, d
         description_axis_lengths!(io, description, axis_lengths)
     end
 
+    if axis_domains !== nothing
+        length(axis_domains) == length(description["fileproperties"]["axis_lengths"]) || error("mismatch between dataset dimension and 'axis_domains' parameter")
+        description["fileproperties"]["axis_domains"] = axis_domains
+    end
+
+    if axis_units !== nothing
+        length(axis_units) == length(description["fileproperties"]["axis_lengths"]) || error("mismatch between dataset dimension and 'axis_units' parameter")
+        description["fileproperties"]["axis_units"] = axis_units
+    end
 
     if dataproperties !== nothing
         description["dataproperties"] = mapreduce(Dict, merge, dataproperties)
