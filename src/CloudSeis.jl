@@ -157,7 +157,7 @@ struct Extent{C<:Container}
     frameindices::UnitRange{Int}
 end
 
-function Dict(extent::Extent)
+function Base.Dict(extent::Extent)
     Dict("name"=>extent.name, "container"=>minimaldict(extent.container), "firstframe"=>extent.frameindices[1], "lastframe"=>extent.frameindices[end])
 end
 
@@ -199,7 +199,7 @@ struct BloscCompressor <: AbstractCompressor
     shuffle::Bool
 end
 BloscCompressor(d::Dict) = BloscCompressor(d["library_options"]["algorithm"], d["library_options"]["level"], d["library_options"]["shuffle"])
-function Dict(c::BloscCompressor)
+function Base.Dict(c::BloscCompressor)
     Dict(
         "method" => "blosc",
         "library" => "Blosc.jl",
@@ -253,7 +253,7 @@ function ZfpCompressor(d::Dict)
     end
 end
 
-function Dict(c::ZfpCompressor)
+function Base.Dict(c::ZfpCompressor)
     local library_options
     if c.tol !== nothing
         library_options = Dict("tol" => c.tol)
@@ -295,7 +295,7 @@ function CloudSeisCvxCompressor(;b1=16,b2=16,b3=16,scale=0.001f0)
 end
 kwargs(c::CloudSeisCvxCompressor) = (b1=c.b1, b2=c.b2, b3=c.b3, scale=scale)
 CloudSeisCvxCompressor(d::Dict) = CloudSeisCvxCompressor(d["library_options"]["b1"], d["library_options"]["b2"], d["library_options"]["b3"], d["library_options"]["scale"])
-function Dict(c::CloudSeisCvxCompressor)
+function Base.Dict(c::CloudSeisCvxCompressor)
     Dict(
         "method" => "cvx",
         "library" => "CvxCompress.jl",
@@ -314,13 +314,13 @@ hdrlength_multipleof(_::CloudSeisCvxCompressor) = 4
 
 struct LeftJustifyCompressor <: AbstractCompressor end
 LeftJustifyCompressor(d::Dict) = LeftJustifyCompressor()
-Dict(c::LeftJustifyCompressor) = Dict("method" => "leftjustify")
+Base.Dict(c::LeftJustifyCompressor) = Dict("method" => "leftjustify")
 Base.copy(c::LeftJustifyCompressor) = LeftJustifyCompressor()
 hdrlength_multipleof(_::LeftJustifyCompressor) = 1
 
 struct NotACompressor <: AbstractCompressor end
 NotACompressor(d::Dict) = NotACompressor()
-Dict(c::NotACompressor) = Dict("method" => "none")
+Base.Dict(c::NotACompressor) = Dict("method" => "none")
 Base.copy(c::NotACompressor) = NotACompressor()
 hdrlength_multipleof(_::NotACompressor) = 1
 
