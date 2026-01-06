@@ -1624,8 +1624,9 @@ TeaSeis.set!(prop::TraceProperty, hdrs::AbstractArray{UInt8,2}, i::Integer, valu
 Base.LinearIndices(io::CSeis) = LinearIndices(size(io)[3:end])
 
 function linearframeidx(io, idx, idim)
-    @boundscheck begin
-        if rem(idx[idim] - io.axis_lstarts[2+idim], io.axis_lincs[2+idim]) > 0
+    Base.@boundscheck begin
+        # if rem(idx[idim] - io.axis_lstarts[2+idim], io.axis_lincs[2+idim]) > 0
+        if rem(idx[idim] - io.axis_lstarts[2+idim], io.axis_lincs[2+idim]) != 0
             error("$idx is out-of-bounds.")
         end
     end
@@ -1641,8 +1642,9 @@ logicalframeidx(io, idx::CartesianIndex) = logicalframeidx(io, idx.I)
 logicalframeidx(io, idx::Int...) = logicalframeidx(io, idx)
 
 function lineartraceidx(io, idx)
-    @boundscheck begin
-        if rem(idx - io.axis_lstarts[2], io.axis_lincs[2]) > 0
+    Base.@boundscheck begin
+        # if rem(idx - io.axis_lstarts[2], io.axis_lincs[2]) > 0
+        if rem(idx - io.axis_lstarts[2], io.axis_lincs[2]) != 0
             error("$idx is out-of-bounds.")
         end
     end
@@ -2684,6 +2686,7 @@ hasdataproperty,
 headerlength,
 iscsdata,
 lincs,
+lineartraceidx
 lstarts,
 pincs,
 prop,
