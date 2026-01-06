@@ -665,14 +665,14 @@ const compressors = Sys.iswindows() ? ("none","blosc","leftjustify","zfp") : ("n
         _c = isa(c, Array) ? c[1] : c
 
         io = csopen_robust(c, "w", axis_lengths=[10,11,12], dataproperties=[DataProperty("X",1)], compressor=compressor, compressor_options=compressor_options)
-        d = JSON.parse(read(_c, "description.json", String))
+        d = JSON.parse(read(_c, "description.json", String); dicttype=Dict)
         @test isa(d["dataproperties"], Dict)
         d["dataproperties"] = [Dict("label"=>"X", "value"=>1)]
-        write(_c, "description.json", json(d, 1))
+        write(_c, "description.json", JSON.json(d, 1))
         close(io)
 
         io = csopen_robust(c, "r")
-        d = JSON.parse(read(_c, "description.json", String))
+        d = JSON.parse(read(_c, "description.json", String); dicttype=Dict)
         @test isa(d["dataproperties"], Vector)
         @test dataproperty(io, "X") == 1
 
@@ -879,7 +879,7 @@ const compressors = Sys.iswindows() ? ("none","blosc","leftjustify","zfp") : ("n
         io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], force=true, compressor="none", compressor_options=compressor_options)
         description = JSON.parse(read(io.containers[1], "description.json", String))
         delete!(description, "compressor")
-        write(io.containers[1], "description.json", json(description))
+        write(io.containers[1], "description.json", JSON.json(description))
         io = csopen(mkcontainer(cloud, "test-$r-cs"), axis_lengths=[10,11,12], force=true, compressor="none", compressor_options=compressor_options)
         @test isa(io.cache, CloudSeis.Cache{CloudSeis.NotACompressor})
     end
@@ -1077,7 +1077,7 @@ const compressors = Sys.iswindows() ? ("none","blosc","leftjustify","zfp") : ("n
         description = JSON.parse(read(io.containers[1], "description.json", String))
         delete!(description, "axis_lincs")
         delete!(description, "axis_lstarts")
-        write(io.containers[1], "description.json", json(description))
+        write(io.containers[1], "description.json", JSON.json(description))
         io = csopen(mkcontainer(cloud, "test-$r-cs"), axis_lengths=[10,11,12], force=true)
         @test lstarts(io) == (1,1,1)
         @test lincs(io) == (1,1,1)

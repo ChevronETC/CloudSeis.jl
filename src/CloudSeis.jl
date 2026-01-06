@@ -562,11 +562,11 @@ in the "primary" container.
 """
 cscreate(containers::Union{Container,Vector{<:Container}}; kwargs...) = close(csopen(containers, "w"; kwargs...))
 
-read_description(container::Container) = JSON.parse(read(joinpath(container, "description.json"), String))
+read_description(container::Container) = JSON.parse(read(joinpath(container, "description.json"), String); dicttype=Dict)
 read_description(containers::Vector{<:Container}) = read_description(containers[1])
 read_description(io::CSeis) = read_description(io.containers[1])
 
-write_description(container::Container, description) = write(joinpath(container, "description.json"), json(description, 1))
+write_description(container::Container, description) = write(joinpath(container, "description.json"), JSON.json(description, 1))
 write_description(containers::Vector{<:Container}, description) = write_description(containers[1], description)
 write_description(io::CSeis, description) = write_description(io.containers[1], description)
 
