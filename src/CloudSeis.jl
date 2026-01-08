@@ -1623,29 +1623,54 @@ TeaSeis.set!(prop::TraceProperty, hdrs::AbstractArray{UInt8,2}, i::Integer, valu
 
 Base.LinearIndices(io::CSeis) = LinearIndices(size(io)[3:end])
 
-function linearframeidx(io, idx, idim)
-    Base.@boundscheck begin
-        # if rem(idx[idim] - io.axis_lstarts[2+idim], io.axis_lincs[2+idim]) > 0
-        if rem(idx[idim] - io.axis_lstarts[2+idim], io.axis_lincs[2+idim]) != 0
-            error("$idx is out-of-bounds.")
+@inline function linearframeidx(io, idx, idim)
+    @boundscheck begin
+        boundA = io.axis_lstarts[2+idim]
+        boundB = io.axis_lstarts[2+idim] + io.axis_lincs[2+idim]*(io.axis_lengths[2+idim]-1)
+        lowBound = min(boundA, boundB)      # these min/max calls are to support negative increments, even though they are not supported as of now
+        highBound = max(boundA, boundB)     # negative increments will cause the bounds to be reversed compared to positive increments
+
+        if idx[idim] < lowBound || idx[idim] > highBound
+            error("index:$idx is out-of-bounds.")
+        end
+        
+        if rem(idx[idim] - io.axis_lstarts[2+idim], io.axis_lincs[2+idim]) != 0 # rem() sometimes returns negative values
+            error("index:$idx is out-of-bounds.")
         end
     end
     div(idx[idim] - io.axis_lstarts[2+idim], io.axis_lincs[2+idim]) + 1
 end
 
-linearframeidx(io, idx::NTuple{N,Int}) where {N} = LinearIndices(io)[CartesianIndex(ntuple(idim->linearframeidx(io, idx, idim), N))]
-linearframeidx(io, idx::CartesianIndex) = linearframeidx(io, idx.I)
-linearframeidx(io, idx::Int...) = linearframeidx(io, idx)
+# Helper generated function to unroll ntuple call and preserve @inbounds propagation
+@generated function _linearframeidx_impl(io, idx::NTuple{N,Int}) where {N}
+    # Generate unrolled code at compile time to avoid closure that breaks @inbounds propagation
+    exprs = [:(linearframeidx(io, idx, $i)) for i in 1:N]
+    quote
+        Base.@_propagate_inbounds_meta
+        cartidx = CartesianIndex(tuple($(exprs...)))
+        LinearIndices(io)[cartidx]
+    end
+end
+
+@inline Base.@propagate_inbounds linearframeidx(io, idx::NTuple{N,Int}) where {N} = _linearframeidx_impl(io, idx)
+@inline Base.@propagate_inbounds linearframeidx(io, idx::CartesianIndex) = linearframeidx(io, idx.I)
+@inline Base.@propagate_inbounds linearframeidx(io, idx::Int...) = linearframeidx(io, idx)
 
 logicalframeidx(io, idx::NTuple{N,Int}) where {N} = CartesianIndex(ntuple(idim->io.axis_lstarts[2+idim] + io.axis_lincs[2+idim]*(idx[idim] - 1), N))
 logicalframeidx(io, idx::CartesianIndex) = logicalframeidx(io, idx.I)
 logicalframeidx(io, idx::Int...) = logicalframeidx(io, idx)
 
-function lineartraceidx(io, idx)
-    Base.@boundscheck begin
-        # if rem(idx - io.axis_lstarts[2], io.axis_lincs[2]) > 0
-        if rem(idx - io.axis_lstarts[2], io.axis_lincs[2]) != 0
-            error("$idx is out-of-bounds.")
+@inline function lineartraceidx(io, idx)
+    @boundscheck begin
+        boundA = io.axis_lstarts[2]
+        boundB = io.axis_lstarts[2] + io.axis_lincs[2]*(io.axis_lengths[2]-1)
+        lowBound = min(boundA, boundB)      # these min/max calls are to support negative increments, even though they are not supported as of now
+        highBound = max(boundA, boundB)     # negative increments will cause the bounds to be reversed compared to positive increments
+        if idx < lowBound || idx > highBound
+            error("index:$idx is out-of-bounds.")
+        end
+        if rem(idx - io.axis_lstarts[2], io.axis_lincs[2]) != 0 # rem() sometimes returns negative values
+            error("index:$idx is out-of-bounds.")
         end
     end
     div(idx - io.axis_lstarts[2], io.axis_lincs[2]) + 1
@@ -2686,7 +2711,6 @@ hasdataproperty,
 headerlength,
 iscsdata,
 lincs,
-lineartraceidx
 lstarts,
 pincs,
 prop,

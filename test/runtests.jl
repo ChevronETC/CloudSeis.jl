@@ -1062,13 +1062,118 @@ const compressors = Sys.iswindows() ? ("none","blosc","leftjustify","zfp") : ("n
 
     @testset "non unitary logical start and increments, exception for in-between out-of-bounds index" begin
         r = uuid4()
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], axis_lstarts=[1,2,3], axis_lincs=[4,5,6], dataproperties=[DataProperty("P",1)], compressor=compressor, compressor_options=compressor_options)
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[3,3,4], axis_lstarts=[1,2,3], axis_lincs=[4,5,6], dataproperties=[DataProperty("P",1)], compressor=compressor, compressor_options=compressor_options)
 
+        # linearframeidx()
+        @test_throws ErrorException CloudSeis.linearframeidx(io, -4)
+        @test_throws ErrorException CloudSeis.linearframeidx(io, -3) # 3-6
+        @test_throws ErrorException CloudSeis.linearframeidx(io, -2)
+        @test_throws ErrorException CloudSeis.linearframeidx(io, 0)
+        @test_throws ErrorException CloudSeis.linearframeidx(io, 1)
+        @test_throws ErrorException CloudSeis.linearframeidx(io, 2)
+        @test CloudSeis.linearframeidx(io, 3) == 1
         @test_throws ErrorException CloudSeis.linearframeidx(io, 4)
-        @test @inbounds CloudSeis.linearframeidx(io, 2) == 1
+        @test_throws ErrorException CloudSeis.linearframeidx(io, 5)
+        @test_throws ErrorException CloudSeis.linearframeidx(io, 6)
+        @test_throws ErrorException CloudSeis.linearframeidx(io, 7)
+        @test_throws ErrorException CloudSeis.linearframeidx(io, 8)
+        @test CloudSeis.linearframeidx(io, 9) == 2
+        @test_throws ErrorException CloudSeis.linearframeidx(io, 10)
+        @test_throws ErrorException CloudSeis.linearframeidx(io, 11)
+        @test_throws ErrorException CloudSeis.linearframeidx(io, 12)
+        @test_throws ErrorException CloudSeis.linearframeidx(io, 13)
+        @test_throws ErrorException CloudSeis.linearframeidx(io, 14)
+        @test CloudSeis.linearframeidx(io, 15) == 3
+        @test CloudSeis.linearframeidx(io, 21) == 4
+        @test_throws ErrorException CloudSeis.linearframeidx(io, 22)
+        @test_throws ErrorException CloudSeis.linearframeidx(io, 26)
+        @test_throws ErrorException CloudSeis.linearframeidx(io, 27) # 21+6
+        @test_throws ErrorException CloudSeis.linearframeidx(io, 28)
+        
+        # the @inbounds linearframeidx() calls below should not throw errors
+        # these were tested in a separate test script as to not disturb Pkg.test() arguments
+        # Pkg.test() by default runs with --check-bounds=yes (which forces bounds checking even with @inbounds)
+        # ^ This is useful for testing other julia behaviour, so I will not change that here
 
+        # @inbounds only works within a function scope
+        # function test_inbounds_linearframeidx(io, idx)
+        #     @inbounds CloudSeis.linearframeidx(io, idx)
+        # end
+        # test_inbounds_linearframeidx(io, -4)
+        # test_inbounds_linearframeidx(io, -3)
+        # test_inbounds_linearframeidx(io, -2)
+        # test_inbounds_linearframeidx(io, 0)
+        # test_inbounds_linearframeidx(io, 1)
+        # test_inbounds_linearframeidx(io, 2)
+        # test_inbounds_linearframeidx(io, 3) == 1
+        # test_inbounds_linearframeidx(io, 4)
+        # test_inbounds_linearframeidx(io, 5)
+        # test_inbounds_linearframeidx(io, 6)
+        # test_inbounds_linearframeidx(io, 7)
+        # test_inbounds_linearframeidx(io, 8)
+        # test_inbounds_linearframeidx(io, 9) == 2
+        # test_inbounds_linearframeidx(io, 10)
+        # test_inbounds_linearframeidx(io, 11)
+        # test_inbounds_linearframeidx(io, 12)
+        # test_inbounds_linearframeidx(io, 13)
+        # test_inbounds_linearframeidx(io, 14)
+        # test_inbounds_linearframeidx(io, 15) == 3
+        # test_inbounds_linearframeidx(io, 21) == 4
+        # test_inbounds_linearframeidx(io, 22)
+        # test_inbounds_linearframeidx(io, 26)
+        # test_inbounds_linearframeidx(io, 27)
+        # test_inbounds_linearframeidx(io, 28)
+        
+        # lineartraceidx()
+        @test_throws ErrorException CloudSeis.lineartraceidx(io, -4)
+        @test_throws ErrorException CloudSeis.lineartraceidx(io, -3) # 2-5
+        @test_throws ErrorException CloudSeis.lineartraceidx(io, -2)
+        @test_throws ErrorException CloudSeis.lineartraceidx(io, -1)
+        @test_throws ErrorException CloudSeis.lineartraceidx(io, 0)
+        @test_throws ErrorException CloudSeis.lineartraceidx(io, 1)
+        @test CloudSeis.lineartraceidx(io, 2) == 1
         @test_throws ErrorException CloudSeis.lineartraceidx(io, 3)
-        @test @inbounds CloudSeis.linearframeidx(io, 3) == 1
+        @test_throws ErrorException CloudSeis.lineartraceidx(io, 4)
+        @test_throws ErrorException CloudSeis.lineartraceidx(io, 5)
+        @test_throws ErrorException CloudSeis.lineartraceidx(io, 6)
+        @test CloudSeis.lineartraceidx(io, 7) == 2
+        @test_throws ErrorException CloudSeis.lineartraceidx(io, 8)
+        @test_throws ErrorException CloudSeis.lineartraceidx(io, 9)
+        @test_throws ErrorException CloudSeis.lineartraceidx(io, 10)
+        @test_throws ErrorException CloudSeis.lineartraceidx(io, 11)
+        @test CloudSeis.lineartraceidx(io, 12) == 3
+        @test_throws ErrorException CloudSeis.lineartraceidx(io, 13)
+        @test_throws ErrorException CloudSeis.lineartraceidx(io, 16)
+        @test_throws ErrorException CloudSeis.lineartraceidx(io, 17) # 11+5
+        @test_throws ErrorException CloudSeis.lineartraceidx(io, 18)
+
+        # inbounds only workds within a function scope
+        # function test_inbounds_lineartraceidx(io, idx)
+        #     @inbounds CloudSeis.lineartraceidx(io, idx)
+        # end
+        # test_inbounds_lineartraceidx(io, -4)
+        # test_inbounds_lineartraceidx(io, -3)
+        # test_inbounds_lineartraceidx(io, -2)
+        # test_inbounds_lineartraceidx(io, -1)
+        # test_inbounds_lineartraceidx(io, 0)
+        # test_inbounds_lineartraceidx(io, 1)
+        # test_inbounds_lineartraceidx(io, 2) == 1
+        # test_inbounds_lineartraceidx(io, 3)
+        # test_inbounds_lineartraceidx(io, 4)
+        # test_inbounds_lineartraceidx(io, 5)
+        # test_inbounds_lineartraceidx(io, 6)
+        # test_inbounds_lineartraceidx(io, 7) == 2
+        # test_inbounds_lineartraceidx(io, 8)
+        # test_inbounds_lineartraceidx(io, 9)
+        # test_inbounds_lineartraceidx(io, 10)
+        # test_inbounds_lineartraceidx(io, 11)
+        # test_inbounds_lineartraceidx(io, 12) == 3
+        # test_inbounds_lineartraceidx(io, 13)
+        # test_inbounds_lineartraceidx(io, 16)
+        # test_inbounds_lineartraceidx(io, 17) # 11+5
+        # test_inbounds_lineartraceidx(io, 18)
+
+        rm(io)
     end
 
     @testset "backwards compatability, logical increments and starts" begin
