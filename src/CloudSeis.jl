@@ -1642,12 +1642,12 @@ Base.LinearIndices(io::CSeis) = LinearIndices(size(io)[3:end])
 end
 
 # Helper generated function to unroll ntuple call and preserve @inbounds propagation
+# Using Base.Cartesian for better parallel worker support
 @generated function _linearframeidx_impl(io, idx::NTuple{N,Int}) where {N}
-    # Generate unrolled code at compile time to avoid closure that breaks @inbounds propagation
-    exprs = [:(linearframeidx(io, idx, $i)) for i in 1:N]
     quote
         Base.@_propagate_inbounds_meta
-        cartidx = CartesianIndex(tuple($(exprs...)))
+        Base.Cartesian.@nexprs $N i -> idx_i = linearframeidx(io, idx, i)
+        cartidx = CartesianIndex(Base.Cartesian.@ntuple $N i -> idx_i)
         LinearIndices(io)[cartidx]
     end
 end
