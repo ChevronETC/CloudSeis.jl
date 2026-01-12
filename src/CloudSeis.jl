@@ -1990,7 +1990,7 @@ function TeaSeis.writeframe(io::CSeis, trcs::AbstractArray, idx::CartesianIndex)
     prop_trctype = prop(io, stockprop[:TRC_TYPE])
     for i = 1:size(io,2)
         set!(prop_trctype, hdrs, i, tracetype[:live])
-        set!(prop(io, io.axis_propdefs[2]), hdrs, i, i)
+        set!(prop(io, io.axis_propdefs[2]), hdrs, i, io.axis_lstarts[2]+io.axis_lincs[2]*(i-1)) 
         for idim = 3:ndims(io)
             set!(prop(io, io.axis_propdefs[idim]), hdrs, i, idx[idim-2])
         end
