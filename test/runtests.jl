@@ -1050,13 +1050,26 @@ const compressors = Sys.iswindows() ? ("none","blosc","leftjustify","zfp") : ("n
         t,h = allocframe(io)
         t .= x
 
-        writeframe(io, t, 9)
+        for iframe in 1:12
+            logical_frame_idx = 6 + 3*(iframe - 1)
+            writeframe(io, t, logical_frame_idx)
+        end
         close(io)
 
         io = csopen(mkcontainer(cloud, "test-$r-cs"))
         t,h = readframe(io, 9)
-        close(io)
         @test t ≈ x rtol=rtol
+        
+        # test indices stored in headers created by writeframe()
+        for iframe = 1:size(io,3)
+            h = readframehdrs(io, io.axis_lstarts[3] + io.axis_lincs[3]*(iframe - 1))
+            for itrace = 1:size(io,2)
+                @test get(prop(io,io.axis_propdefs[2]), h, itrace) == io.axis_lstarts[2] + io.axis_lincs[2]*(itrace - 1) # with a faulty trace index, leftjustify compression could fail
+                @test get(prop(io,io.axis_propdefs[3]), h, itrace) == io.axis_lstarts[3] + io.axis_lincs[3]*(iframe - 1)
+            end
+        end
+        close(io)
+
         rm(io)
     end
 
