@@ -62,11 +62,8 @@ function csopen_robust(containers, mode; kwargs...)
     io
 end
 
-# const clouds = (Azure, Azure2, POSIX)
-# const compressors = Sys.iswindows() ? ("none","blosc","leftjustify","zfp") : ("none","blosc","leftjustify","zfp","cvx")
-
-const clouds = (POSIX,)
-const compressors =  ("none", "leftjustify")
+const clouds = (Azure, Azure2, POSIX)
+const compressors = Sys.iswindows() ? ("none","blosc","leftjustify","zfp") : ("none","blosc","leftjustify","zfp","cvx")
 
 @testset "CloudSeis, cloud=$cloud, compresser=$compressor" for cloud in clouds, compressor in compressors
     if compressor == "cvx"
