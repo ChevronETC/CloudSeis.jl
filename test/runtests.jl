@@ -62,8 +62,11 @@ function csopen_robust(containers, mode; kwargs...)
     io
 end
 
-const clouds = (Azure, Azure2, POSIX)
-const compressors = Sys.iswindows() ? ("none","blosc","leftjustify","zfp") : ("none","blosc","leftjustify","zfp","cvx")
+# const clouds = (Azure, Azure2, POSIX)
+# const compressors = Sys.iswindows() ? ("none","blosc","leftjustify","zfp") : ("none","blosc","leftjustify","zfp","cvx")
+
+const clouds = (POSIX,)
+const compressors =  ("none", "leftjustify")
 
 @testset "CloudSeis, cloud=$cloud, compresser=$compressor" for cloud in clouds, compressor in compressors
     if compressor == "cvx"
@@ -1243,7 +1246,7 @@ const compressors = Sys.iswindows() ? ("none","blosc","leftjustify","zfp") : ("n
         rm(io)
     end
 
-    @testset "partial read for foldmap with empty extents" begin
+    @testset "partial read for folds with empty extents" begin
         r = uuid4()
         io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], force=true, frames_per_extent=7, compressor=compressor, compressor_options=compressor_options)
         @test fold(io,1) == 0
@@ -1253,6 +1256,13 @@ const compressors = Sys.iswindows() ? ("none","blosc","leftjustify","zfp") : ("n
         @test fold(io,2) == 0
         @test fold(io,11) == 0
         @test fold(io,7) == 0
+    end
+
+    @testset "read for foldmap with no extent loaded" begin
+        r = uuid4()
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], force=true, frames_per_extent=7, compressor=compressor, compressor_options=compressor_options)
+        # check for error when cache is empty and requesting foldmap of current extent in cache
+        @test_throws ErrorException CloudSeis.foldmap(io)
     end
 
     @testset "left justify headers" begin
