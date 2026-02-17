@@ -1137,8 +1137,9 @@ function cache_from_file!(io::CSeis{T,N,NotACompressor}, extentindex, regularize
     notacompressor_cache_from_file!(io, extentindex)
 end
 
+# foldmap must be stored in the cache before calling this function
 function compressed_offsets(io::CSeis{T,N,LeftJustifyCompressor}, extentindex) where {T,N}
-    fmap = foldmap(io, extentindex)
+    fmap = foldmap_from_current_extent(io)
     nframes = length(fmap)
     _headerlength = headerlength(io)
 
@@ -1163,13 +1164,16 @@ function cache_from_file!(io::CSeis{T,N,LeftJustifyCompressor}, extentindex, reg
     if regularize
         @debug "reading and decompressing extent $extentindex..."
         t_read = @elapsed begin
-            io.cache.data = Vector{UInt8}(undef, cachesize(io, extentindex))
+            io.cache.data = Vector{UInt8}(undef, cachesize(io, extentindex))    # make space for the uncompressed data in the cache
             cdata = unsafe_wrap(Array, pointer(io.cache.data), (filesize(io.extents[extentindex].container, io.extents[extentindex].name),); own=false)
             read!(io.extents[extentindex].container, io.extents[extentindex].name, cdata)
             io.cache.data[1:length(cdata)] .= cdata
         end
-
+        
         t_decompress = @elapsed begin
+            # setting cache variable to reflect what is currently stored because they are used in compressed_offsets(), but they'll be over-written in the cache!() after this function is done.
+            io.cache.type = CACHE_ALL_LEFT_JUSTIFY # set cache type to leftjustify since the data is currently left-justified in the cache until decompressed
+            io.cache.extentindex = extentindex
             compressed_trc_offsets,compressed_hdr_offsets,fmap,nframes,_headerlength = compressed_offsets(io, extentindex)
 
             for iframe = nframes:-1:1
@@ -1180,7 +1184,7 @@ function cache_from_file!(io::CSeis{T,N,LeftJustifyCompressor}, extentindex, reg
                 copyto!(io.cache.data, hdrsoffset(io, true, extentindex, io.extents[extentindex].frameindices[iframe]), io.cache.data, compressed_hdr_offsets[iframe], fmap[iframe]*_headerlength)
             end
 
-            # regularize the indivdual frames
+            # regularize the individual frames
             for (jframe,iframe) = enumerate(io.extents[extentindex].frameindices)
                 regularize!(io, fmap[jframe], getframetrcs(io, true, extentindex, iframe), getframehdrs(io, true, extentindex, iframe))
             end
@@ -1333,8 +1337,15 @@ TeaSeis.prop(io::CSeis, _property::Symbol, _T::Type{T}) where {T} = io.traceprop
 TeaSeis.prop(io::CSeis, _property::String, _T::Type{T}) where {T} = io.traceproperties[Symbol(_property)]::TraceProperty{T}
 TeaSeis.prop(io::CSeis, _property::TracePropertyDef{T}) where {T} = prop(io, _property.label, T)
 
-function foldmap(io::CSeis, extentindex)
-    nbytes = sizeof(Int)*length(io.extents[extentindex].frameindices)
+#=
+Returns the foldmap in-place for the currently cached extent.
+If no cache is loaded, throw error
+=#
+function foldmap_from_current_extent(io::CSeis)
+    if io.cache.type == CACHE_NONE || io.cache.extentindex == 0
+        error("no cache loaded. foldmap is only available for the currently cached extent. use `cache!(io, extentindex)` to load an extent into the cache.")
+    end
+    nbytes = sizeof(Int)*length(io.extents[io.cache.extentindex].frameindices)
     reinterpret(Int, view(io.cache.data, 1:nbytes))
 end
 
@@ -1383,18 +1394,18 @@ end
 """
     foldmap(io; all=false, nasync=2048, showprogress=false)
 
-Return the foldmap for either the currently cached extent (if `all=false`)
-or the entire dataset if `all=true`.  If `all=true`, then the operation is
-performed using an asynchronous map over the extents.  The number of asynchronous
-tasks in this map is controled by `nasync`.  Use `showprogress=true` to display
-a progress bar while loading the foldmap.
+Return the foldmap for either the currently cached extent in-place (if `all=false`)
+or a copy of the entire dataset if `all=true`. Will error if no cache is loaded and
+`all=false`. If `all=true`, then the operation is performed using an asynchronous
+map over the extents.  The number of asynchronous tasks in this map is controled by
+`nasync`.  Use `showprogress=true` to display a progress bar while loading the foldmap.
 """
 function foldmap(io::CSeis; all=false, nasync=2048, showprogress=false)
     local fmap
     if all
         fmap = foldmap_all(io, nasync, showprogress)
     else
-        fmap = foldmap(io, io.cache.extentindex)
+        fmap = foldmap_from_current_extent(io)
     end
     fmap
 end
