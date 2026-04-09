@@ -2676,7 +2676,7 @@ end
 
 function history!(io::CSeis; kwargs...)
     description = read_description(io)
-    description["history"] = history!(get(description, "history", Dict()))
+    description["history"] = history!(get(description, "history", Dict()); kwargs...)
     write_description(io, description)
     description["history"]
 end
