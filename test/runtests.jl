@@ -1650,7 +1650,21 @@ end
     @test z["flow"]["processes"][1]["process"] == "myprocess3"
     @test z["flow"]["processes"][1]["parameters"] == Dict("six"=>6, "seven"=>7)
 
+    a = history!(; process = "myprocess4", process_parameters = Dict("nine"=>8))
+
+    container2 = mkcontainer(cloud, "test-$(uuid4())-cs")
+    io2 = csopen_robust(container2, "w", axis_lengths=[10,12,20,2], frames_per_extent=10, history=a)
+    close(io2)
+
+    b = history!(io; process = "myprocess4", process_parameters = Dict("eight"=>8), histories=[container2])
+    close(io)
+
+    c = history(io)
+
+    @test c["inputs"][1]["history"] == a
+
     rm(io)
+    rm(io2)
 end
 
 @testset "default geometry" for cloud in clouds
