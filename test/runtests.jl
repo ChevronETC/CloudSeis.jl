@@ -864,18 +864,38 @@ const compressors = Sys.iswindows() ? ("none","blosc","leftjustify","zfp") : ("n
         rm(iomv)
     end
 
-    @testset "filesize" begin
+    @testset "filesize, full" begin
         r = uuid4()
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], compressor=compressor, compressor_options=compressor_options, frames_per_extent=4)
+        c = mkcontainer(cloud, "test-$r-cs")
+        io = csopen_robust(c, "w", axis_lengths=[10,11,12], compressor=compressor, compressor_options=compressor_options, frames_per_extent=4)
         x = rand(Float32,10,11,12)
         write(io, x, :, :, :)
         close(io)
 
+        io = csopen(c)
         n = filesize(io.containers[1], "description.json") + filesize(io.extents[1].container, io.extents[1].name) +
-            filesize(io.extents[2].container, io.extents[2].name) + filesize(io.extents[3].container, io.extents[3].name)
+        filesize(io.extents[2].container, io.extents[2].name) + filesize(io.extents[3].container, io.extents[3].name)
 
         @test filesize(io) == n
 
+        close(io)
+        rm(io)
+    end
+
+    @testset "filesize, partial" begin
+        r = uuid4()
+        c = mkcontainer(cloud, "test-$r-cs")
+        io = csopen_robust(c, "w", axis_lengths=[10,11,12], compressor=compressor, compressor_options=compressor_options, frames_per_extent=4)
+        x = rand(Float32,10,11,4)
+        write(io, x, :, :, 1:4)
+        close(io)
+
+        io = csopen(c)
+        n = filesize(io.containers[1], "description.json") + filesize(io.extents[1].container, io.extents[1].name)
+
+        @test filesize(io) == n
+
+        close(io)
         rm(io)
     end
 
