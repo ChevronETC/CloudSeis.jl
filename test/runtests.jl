@@ -864,6 +864,21 @@ const compressors = Sys.iswindows() ? ("none","blosc","leftjustify","zfp") : ("n
         rm(iomv)
     end
 
+    @testset "filesize" begin
+        r = uuid4()
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], compressor=compressor, compressor_options=compressor_options, nextents=3)
+        x = rand(Float32,10,11,12)
+        write(io, x, :, :, :)
+        close(io)
+
+        n = filesize(io.containers[1], "description.json") + filesize(io.extents[1].container, io.extents[1].name) +
+            filesize(io.extents[2].container, io.extents[2].name) + filesize(io.extents[3].container, io.extents[3].name)
+
+        @test filesize(io) == n
+
+        rm(io)
+    end
+
     @testset "robust cscreate" begin
         r = uuid4()
         io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], force=true, compressor=compressor, compressor_options=compressor_options)
