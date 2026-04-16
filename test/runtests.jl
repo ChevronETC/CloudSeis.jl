@@ -866,7 +866,7 @@ const compressors = Sys.iswindows() ? ("none","blosc","leftjustify","zfp") : ("n
 
     @testset "filesize" begin
         r = uuid4()
-        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], compressor=compressor, compressor_options=compressor_options, nextents=3)
+        io = csopen_robust(mkcontainer(cloud, "test-$r-cs"), "w", axis_lengths=[10,11,12], compressor=compressor, compressor_options=compressor_options, frames_per_extent=4)
         x = rand(Float32,10,11,12)
         write(io, x, :, :, :)
         close(io)
