@@ -2424,6 +2424,19 @@ end
 Base.cp(src::CSeis, dst_container::Container, extents=Colon(); kwargs...) = cp(src, [dst_container], extents; kwargs...)
 
 """
+    filesize(io::CSeis)
+
+Return the total size of a CloudSeis data-set in bytes.
+"""
+function Base.filesize(io::CSeis)
+    file_sizes = Vector{Int}(undef, length(io.extents))
+    @sync for (iextent,extent) in enumerate(io.extents)
+        @async file_sizes[iextent] = isfile(extent.container, extent.name) ? filesize(extent.container, extent.name) : 0
+    end
+    sum(file_sizes) + filesize(io.containers[1], "description.json")
+end
+
+"""
     mv(src::CSeis, dst::Container; batch_size=32, workers=Distributed.workers)
 
 move a CloudSeis data-set to `dst` and where `dst` is either of type `Container` or
