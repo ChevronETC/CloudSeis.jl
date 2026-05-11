@@ -1727,12 +1727,12 @@ function extentindex_from_frameindex(io, idx::CartesianIndex)
     error("can't find extent")
 end
 
-function trcsoffset(io::CSeis, regularize::Bool, extentindex, frameidx)
+function trcsoffset(io::CSeis{T}, regularize::Bool, extentindex, frameidx)::Int where {T}
     nsamples = size(io,1)
     nframes = length(io.extents[extentindex].frameindices)
     frstframe = io.extents[extentindex].frameindices[1]
 
-    local ntraces_times_nframes, ntraces_times_frameidx
+    local ntraces_times_nframes::Int, ntraces_times_frameidx::Int
     if regularize
         ntraces = size(io,2)
         ntraces_times_nframes = ntraces*nframes
@@ -1743,7 +1743,7 @@ function trcsoffset(io::CSeis, regularize::Bool, extentindex, frameidx)
         ntraces_times_frameidx = frstframe == frameidx ? 0 : mapreduce(frameidx->fold(io,lidxs[frameidx]), +, frstframe:(frameidx-1))
     end
 
-    sizeof(Int)*nframes + io.hdrlength*ntraces_times_nframes + sizeof(io.traceformat)*nsamples*ntraces_times_frameidx + 1
+    sizeof(Int)*nframes + io.hdrlength*ntraces_times_nframes + sizeof(T)*nsamples*ntraces_times_frameidx + 1
 end
 
 function hdrsoffset(io::CSeis, regularize::Bool, extentindex, frameidx)
@@ -1793,18 +1793,18 @@ function unsafe_gettrcs(io::CSeis{T}, extentindex) where {T}
 end
 unsafe_gettrcs(io::CSeis) = unsafe_gettrcs(io, io.cache.extentindex)
 
-function getframetrcs(io::CSeis, regularize::Bool, extentindex, idx::Int)
+function getframetrcs(io::CSeis{T}, regularize::Bool, extentindex, idx::Int) where {T}
     data = io.cache.data
 
     ntraces = regularize ? size(io,2) : fold(io, LogicalIndices(io)[idx])
 
     if ntraces == 0
-        return io.traceformat[]
+        return T[]
     end
 
     frstbyte = trcsoffset(io, regularize, extentindex, idx)
-    lastbyte = frstbyte + ntraces*size(io,1)*sizeof(io.traceformat) - 1
-    reshape(reinterpret(io.traceformat, view(data,frstbyte:lastbyte)), :, ntraces)
+    lastbyte = frstbyte + ntraces*size(io,1)*sizeof(T) - 1
+    reshape(reinterpret(T, view(data,frstbyte:lastbyte)), :, ntraces)
 end
 getframetrcs(io::CSeis, regularize::Bool, idx::CartesianIndex) = getframetrcs(io, regularize, cache!(io, idx, regularize), linearframeidx(io, idx))
 getframetrcs(io::CSeis, regularize::Bool, idx...) = getframetrcs(io, regularize, CartesianIndex(idx))
