@@ -31,7 +31,7 @@ JSON = "0.21, 1"
 ProgressMeter = "1"
 TeaSeis = "0.4"
 ZfpCompression = "0.2"
-julia = "1"
+julia = "1.10"
 
 [extras]
 Blosc = "a74b3585-a348-5f62-a45c-50e91977d574"
