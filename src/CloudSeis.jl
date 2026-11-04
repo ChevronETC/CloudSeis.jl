@@ -2310,6 +2310,8 @@ Limited mutation of the properties of an existing CloudSeis dataset.
 * `axis_lengths = nothing`  Grow the size of the axis lengths (3rd dimension and higher)[1].
 * `axis_domains = nothing` Replace the axis domains of the dataset with `axis_domains`.
 * `axis_units = nothing` Replace the axis units of the dataset with `axis_units`.
+* `axis_pstarts::AbstractVector{Float64} = nothing` Replace the physical starts of the dataset with `axis_pstarts`.
+* `axis_pincs::AbstractVector{Float64} = nothing` Replace the physical increments of the dataset with `axis_pincs`.
 * `dataproperties = nothing` Replace the data properties of the dataset with `dataproperties`.[2]
 * `dataproperties_add = nothing` Add to the data properties of the dataset with `dataproperties_add`.[2]
 * `geometry = nothing` replace the geometry of the dataset with `geometry`.
@@ -2319,7 +2321,7 @@ Limited mutation of the properties of an existing CloudSeis dataset.
 must be greater than `prod(size(io)[3:end])` and `axis_lengths[i]` must equal `size(io,i)` for i∈(1..ndims(io)-1).
 * [2] only one of `dataproperties` or `dataproperties_add` can be specified.
 """
-function description!(io::CSeis; axis_domains=nothing, axis_units=nothing, axis_lengths=nothing, dataproperties=nothing, dataproperties_add=nothing, geometry=nothing)
+function description!(io::CSeis; axis_domains=nothing, axis_units=nothing, axis_lengths=nothing, axis_pstarts::Union{Nothing,AbstractVector{Float64}}=nothing, axis_pincs::Union{Nothing,AbstractVector{Float64}}=nothing, dataproperties=nothing, dataproperties_add=nothing, geometry=nothing)
     io.mode == "r+" || error("mutation is only availabe for data-sets open in 'r+' mode.")
     dataproperties !== nothing && dataproperties_add !== nothing && error("only one of 'dataproperties' or 'dataproperties_add' can be specified.")
 
@@ -2339,11 +2341,25 @@ function description!(io::CSeis; axis_domains=nothing, axis_units=nothing, axis_
         description["fileproperties"]["axis_units"] = axis_units
     end
 
-    if dataproperties !== nothing
-        description["dataproperties"] = mapreduce(Dict, merge, dataproperties)
+    if axis_pstarts !== nothing
+        length(axis_pstarts) == length(description["fileproperties"]["axis_lengths"]) || error("mismatch between dataset dimensions and 'axis_pstarts' parameter")
+        description["fileproperties"]["axis_pstarts"] = axis_pstarts
     end
 
-    if dataproperties_add !== nothing
+    if axis_pincs !== nothing
+        length(axis_pincs) == length(description["fileproperties"]["axis_lengths"]) || error("mismatch between dataset dimensions and 'axis_pincs' parameter")
+        description["fileproperties"]["axis_pincs"] = axis_pincs
+    end
+
+    if dataproperties !== nothing
+        if isempty(dataproperties)
+            description["dataproperties"] = Dict()
+        else
+            description["dataproperties"] = mapreduce(Dict, merge, dataproperties)
+        end
+    end
+
+    if dataproperties_add !== nothing && !isempty(dataproperties_add)
         description["dataproperties"] = merge(description["dataproperties"], mapreduce(Dict, merge, dataproperties_add))
     end
 
