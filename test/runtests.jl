@@ -1556,6 +1556,7 @@ end
 
     io = csopen_robust(container, "r+")
     description!(io, axis_lengths=[10,12,20,4], dataproperties_add=[DataProperty("vs",3), DataProperty("epsilon",4)])
+    description!(io, dataproperties_add=DataProperty[]) # an empty list must be a no-op
 
     io = csopen_robust(container, "r")
     @test size(io) == (10,12,20,4)
@@ -1573,6 +1574,27 @@ end
     io = csopen_robust(container, "r")
     @test domains(io) == (stockdomain[:TIME], stockdomain[:SPACE], stockdomain[:SPACE], stockdomain[:UNKNOWN])
     @test units(io) == (stockunit[:S], stockunit[:M], stockunit[:M], stockunit[:UNKNOWN])
+
+    io = csopen_robust(container, "r+")
+    @test pstarts(io) == (0.0,0.0,0.0,0.0)
+    @test pincs(io) == (1.0,1.0,1.0,1.0)
+    @test_throws ErrorException description!(io, axis_pstarts=[5.0,6.0,7.0])
+    @test_throws ErrorException description!(io, axis_pincs=[0.004,25.0,12.5,1.0,1.0])
+    @test_throws TypeError description!(io, axis_pstarts=[5,6,7,8])
+    @test_throws TypeError description!(io, axis_pincs=[1,25,12,1])
+    # a rejected call must not write the parts of it that were valid
+    @test_throws ErrorException description!(io, axis_pstarts=[5.0,6.0,7.0,8.0], axis_pincs=[0.004,25.0,12.5])
+    close(io)
+    io = csopen_robust(container, "r")
+    @test pstarts(io) == (0.0,0.0,0.0,0.0)
+    @test pincs(io) == (1.0,1.0,1.0,1.0)
+
+    io = csopen_robust(container, "r+")
+    description!(io, axis_pstarts=[5.0,6.0,7.0,8.0], axis_pincs=[0.004,25.0,12.5,1.0])
+    close(io)
+    io = csopen_robust(container, "r")
+    @test pstarts(io) == (5.0,6.0,7.0,8.0)
+    @test pincs(io) == (0.004,25.0,12.5,1.0)
 
     rm(io)
 end
@@ -1656,6 +1678,31 @@ end
     end
     
     close(io)
+    rm(io)
+end
+
+@testset "replace and clear the data properties of a CloudSeis dataset" for cloud in clouds
+    container = mkcontainer(cloud, "test-$(uuid4())-cs")
+    io = csopen_robust(container, "w", axis_lengths=[10,12,20], dataproperties=[DataProperty("v",1), DataProperty("ρ",2)])
+    close(io)
+
+    io = csopen_robust(container, "r+")
+    description!(io, dataproperties=[DataProperty("vp",1)])
+    close(io)
+
+    io = csopen_robust(container, "r")
+    @test dataproperty(io, "vp") == 1
+    @test !hasdataproperty(io, "v")
+    @test !hasdataproperty(io, "ρ")
+    close(io)
+
+    io = csopen_robust(container, "r+")
+    description!(io, dataproperties=DataProperty[])
+    close(io)
+
+    io = csopen_robust(container, "r")
+    @test !hasdataproperty(io, "vp")
+
     rm(io)
 end
 
