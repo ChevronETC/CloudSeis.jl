@@ -63,12 +63,66 @@ mutable struct Geometry
     y_direction::String
     z_direction::String
     tti_angle_units::String
-    tti_azimuth_positive_direction::String
+    tti_azimuth_positive_direction::String # deprecated, we now use tti_azimuth_origin_axis, tti_azimuth_90_axis and tti_tilt_origin_axis to uniquely define the TTI symmetry
     tti_azimuth_origin_axis::String
-    tti_symmetry_axis_z_direction::String 
+    tti_symmetry_axis_z_direction::String # deprecated, we now use tti_azimuth_origin_axis, tti_azimuth_90_axis and tti_tilt_origin_axis to uniquely define the TTI symmetry
+    tti_azimuth_90_axis::String
+    tti_tilt_origin_axis::String
     modelstride_u::Int
     modelstride_v::Int
     modelstride_w::Int
+end
+
+# The older fields describe directions rather than axes.  "clockwise" is the sense of rotation from y toward x, and
+# "elevation" points away from u, which is assumed to point down.
+function tti_unit_vector(axis, u, v, w)
+    e = Dict("x"=>(1.0,0.0,0.0), "y"=>(0.0,1.0,0.0), "z"=>(0.0,0.0,1.0), "u"=>u, "v"=>v, "w"=>w)[lstrip(axis, '-')]
+    (startswith(axis, '-') ? -1 : 1) .* e ./ sqrt(sum(abs2, e))
+end
+
+tti_sign_label(s, negative, positive) = s < -1e-5 ? negative : s > 1e-5 ? positive : "unknown"
+
+function legacy_tti_azimuth_positive_direction(u, v, w, tti_azimuth_origin_axis, tti_azimuth_90_axis)
+    "unknown" ∈ (tti_azimuth_origin_axis, tti_azimuth_90_axis) && return "unknown"
+    e0, e90 = tti_unit_vector(tti_azimuth_origin_axis, u, v, w), tti_unit_vector(tti_azimuth_90_axis, u, v, w)
+    tti_sign_label(e0[1]*e90[2] - e0[2]*e90[1], "clockwise", "counter clockwise")
+end
+
+function legacy_tti_symmetry_axis_z_direction(u, v, w, tti_tilt_origin_axis)
+    tti_tilt_origin_axis == "unknown" && return "unknown"
+    tti_sign_label(sum(tti_unit_vector(tti_tilt_origin_axis, u, v, w) .* tti_unit_vector("u", u, v, w)), "elevation", "depth")
+end
+
+function tti_azimuth_90_axis_from_legacy(u, v, w, tti_azimuth_origin_axis, tti_azimuth_positive_direction)
+    tti_azimuth_positive_direction ∈ ("clockwise", "counter clockwise") || return "unknown"
+    other = get(Dict("x"=>"y", "y"=>"x", "v"=>"w", "w"=>"v"), lstrip(tti_azimuth_origin_axis, '-'), nothing)
+    other === nothing && return "unknown"
+    for axis in (other, "-"*other)
+        legacy_tti_azimuth_positive_direction(u, v, w, tti_azimuth_origin_axis, axis) == tti_azimuth_positive_direction && return axis
+    end
+    "unknown"
+end
+
+function tti_tilt_origin_axis_from_legacy(u, v, w, tti_azimuth_origin_axis, tti_symmetry_axis_z_direction)
+    tti_symmetry_axis_z_direction ∈ ("elevation", "depth") || return "unknown"
+    letter = lstrip(tti_azimuth_origin_axis, '-')
+    # an unknown origin axis is read as the default, "y", so its tilt is measured from ±z
+    candidates = letter ∈ ("v", "w") ? ("u", "-u") : letter ∈ ("x", "y", "unknown") ? ("z", "-z") : ()
+    for axis in candidates
+        legacy_tti_symmetry_axis_z_direction(u, v, w, axis) == tti_symmetry_axis_z_direction && return axis
+    end
+    "unknown"
+end
+
+function tti_axes_from_legacy!(g)
+    u, v, w = (g.ux,g.uy,g.uz), (g.vx,g.vy,g.vz), (g.wx,g.wy,g.wz)
+    if g.tti_azimuth_90_axis == "unknown"
+        g.tti_azimuth_90_axis = tti_azimuth_90_axis_from_legacy(u, v, w, g.tti_azimuth_origin_axis, g.tti_azimuth_positive_direction)
+    end
+    if g.tti_tilt_origin_axis == "unknown"
+        g.tti_tilt_origin_axis = tti_tilt_origin_axis_from_legacy(u, v, w, g.tti_azimuth_origin_axis, g.tti_symmetry_axis_z_direction)
+    end
+    g
 end
 
 """
@@ -85,22 +139,35 @@ space.
 * `ux=0,uy=0,uz=1` u vector such that the end of the u axis is at the point (ox+ux,oy+uy,oz+uz)
 * `vx=0,vy=0,vz=1` v vector such that the end of the u axis is at the point (ox+vx,oy+vy,oz+vz)
 * `wx=0,wy=0,wz=1` w vector such that the end of the u axis is at the point (ox+wx,oy+wy,oz+wz)
-* `u1=1,un=2` integer end-points (u axis) that can be used to describe a grid (e.g. for finite difference)
-* `v1=1,vn=2` integer end-points (v axis) that can be used to describe a grid (e.g. for finite difference)
-* `w1=1,wn=2` integer end-points (w axis) that can be used to describe a grid (e.g. for finite difference)
+* `u1=0,un=1` integer end-points (u axis) that can be used to describe a grid (e.g. for finite difference)
+* `v1=0,vn=1` integer end-points (v axis) that can be used to describe a grid (e.g. for finite difference)
+* `w1=0,wn=1` integer end-points (w axis) that can be used to describe a grid (e.g. for finite difference)
 * `umin=0.0,umax=1.0` portion of geometry (u axis) that is used for the model
 * `vmin=0.0,vmax=1.0` portion of geometry (v axis) that is used for the model
 * `wmin=0.0,wmax=1.0` portion of geometry (w axis) that is used for the model
 * `x_direction="east"` compass direction that 'x' is parallel to
 * `y_direction="north"` compass direction that 'y' is parallel to
-* `z_direction="depth"` compass direction that 'z' is parallel to
+* `z_direction="elevation"` compass direction that 'z' is parallel to
 * `tti_angle_units="degrees"` for TTI models specify if the tilt and azimuth angles are stored in ("degrees", "radians", or "unknown")
-* `tti_azimuth_positive_direction="counter clockwise"` for TTI models, define the orientation of the azimuth ("clockwise", "counter clockwise" or "unknown")
-* `tti_azimuth_origin_axis="v"` for TTI models, define the axis from which azimuth is measured and at which azimuth is 0 (choose from: "u", "v", "w", "x", "y", "-u", "-v", "-w", "-x", "-y" or "unknown")
-* `tti_symmetry_axis_z_direction="elevation"` for TTI models, define if the projection of the normal to the symmetry axis onto z = (0,0,1) point up (elevation) or down (depth)
+* `tti_azimuth_origin_axis="y"` for TTI models, define the axis from which azimuth is measured and at which azimuth is 0 (choose from: "u", "v", "w", "x", "y", "-u", "-v", "-w", "-x", "-y" or "unknown")
+* `tti_azimuth_90_axis="unknown"` for TTI models, define the axis at which azimuth is 90 degrees, i.e. the direction in which azimuth increases from `tti_azimuth_origin_axis` (choose from: "u", "v", "w", "x", "y", "-u", "-v", "-w", "-x", "-y" or "unknown").  If "unknown", then it is derived from `tti_azimuth_positive_direction` when possible.
+* `tti_tilt_origin_axis="unknown"` for TTI models, define the axis from which tilt is measured and at which tilt is 0 (choose from: "z", "-z", "u", "-u", "v", "-v", "w", "-w" or "unknown").  If "unknown", then it is derived from `tti_symmetry_axis_z_direction` when possible.
+* `tti_azimuth_positive_direction` (deprecated) for TTI models, the older description of `tti_azimuth_90_axis` ("clockwise", "counter clockwise" or "unknown").  The default is derived from `tti_azimuth_90_axis` ("unknown" if that is not possible), or is "clockwise" if `tti_azimuth_90_axis` is "unknown".
+* `tti_symmetry_axis_z_direction` (deprecated) for TTI models, the older description of `tti_tilt_origin_axis` ("elevation", "depth" or "unknown").  The default is derived from `tti_tilt_origin_axis` ("unknown" if that is not possible), or is "elevation" if `tti_tilt_origin_axis` is "unknown".
 # notes
 * this method does not check to see if the u,v,w vectors are orthogonal
-* for models that do not required azimuthal anisotropy (e.g. isotropic, VTI), it is convenient to set `tti_azimumth_positive_direction` and `tti_azimuth_origin_axis` to "unknown"
+* for models that do not required azimuthal anisotropy (e.g. isotropic, VTI), it is convenient to set `tti_azimuth_origin_axis` and `tti_azimuth_90_axis` to "unknown"
+* `tti_azimuth_origin_axis` (`e0`), `tti_azimuth_90_axis` (`e90`) and `tti_tilt_origin_axis` (`et`) define the TTI symmetry axis from tilt `θ` and azimuth `ϕ` as
+`n = sin(θ)*(cos(ϕ)*e0 + sin(ϕ)*e90) + cos(θ)*et`.  The axes must be perpendicular: distinct axes of either `x,y,z` or `u,v,w`, or a mix of the two such as
+`v`, `w` and `z` when `u` is parallel to `z`.
+* `tti_azimuth_positive_direction` and `tti_symmetry_axis_z_direction` describe directions rather than axes.  "clockwise" is the sense of rotation
+from `y` toward `x` (clockwise in map view when `x` is east and `y` is north), and "elevation" ("depth") points away from (toward) `u`, which is assumed to point down.
+`x_direction`, `y_direction` and `z_direction` are not used.  For example, when `u` points along `-z`, "clockwise" and "elevation" are `tti_azimuth_90_axis="x"` and
+`tti_tilt_origin_axis="z"` for `tti_azimuth_origin_axis="y"`, and `tti_azimuth_90_axis="w"` (`"-w"` if `u,v,w` is left-handed) and `tti_tilt_origin_axis="-u"` for
+`tti_azimuth_origin_axis="v"`.
+* both descriptions are stored, so that readers that predate `tti_azimuth_90_axis` and `tti_tilt_origin_axis` can use the older fields.  When reading a data-set (e.g.
+`geometry(io)`), axes that are "unknown" are derived from the older fields.  If the two descriptions contradict each other, then this method warns, and
+`tti_azimuth_90_axis` and `tti_tilt_origin_axis` take precedence.
 * `umin,umax,vmin,vmax,wmin,wmax` are used when a sub- or super-set of u,v,w descibe the model domain.  For example, if the magnitude of `(ux,uy,uz)` is the length of a single
 model grid cell, then `umin=0` and `umax=(nu-1)` would be appropriate.
 """
@@ -109,28 +176,58 @@ function Geometry(;
         ux=1.0,uy=0.0,uz=0.0,
         vx=0.0,vy=1.0,vz=0.0,
         wx=0.0,wy=0.0,wz=1.0,
-        u1=1,un=2,
-        v1=1,vn=2,
-        w1=1,wn=2,
+        u1=0,un=1,
+        v1=0,vn=1,
+        w1=0,wn=1,
         umin=0.0,umax=1.0,
         vmin=0.0,vmax=1.0,
         wmin=0.0,wmax=1.0,
         x_direction = "east",
         y_direction = "north",
-        z_direction = "depth",
+        z_direction = "elevation",
         tti_angle_units = "degrees",
-        tti_azimuth_positive_direction = "clockwise",
+        tti_azimuth_positive_direction = nothing, # deprecated, use tti_azimuth_90_axis instead
         tti_azimuth_origin_axis = "y",
-        tti_symmetry_axis_z_direction="elevation")
+        tti_symmetry_axis_z_direction = nothing, # deprecated, use tti_tilt_origin_axis instead
+        tti_azimuth_90_axis = "unknown",
+        tti_tilt_origin_axis = "unknown")
     x_direction ∈ ("east", "north", "depth", "west", "south", "elevation", "unknown") || error("'x_direction' must be one of (\"east\", \"north\", \"depth\", \"west\", \"south\", \"elevation\", \"unknown\")")
     y_direction ∈ ("east", "north", "depth", "west", "south", "elevation", "unknown") || error("'y_direction' must be one of (\"east\", \"north\", \"depth\", \"west\", \"south\", \"elevation\", \"unknown\")")
     z_direction ∈ ("east", "north", "depth", "west", "south", "elevation", "unknown") || error("'z_direction' must be one of (\"east\", \"north\", \"depth\", \"west\", \"south\", \"elevation\", \"unknown\")")
     tti_angle_units ∈ ("degrees", "radians","unknown") || error("`tti_angle_units` must be one of (\"degrees\", \"radians\", \"unknown\")")
-    tti_azimuth_positive_direction ∈ ("clockwise", "counter clockwise", "unknown") || error("'tti_azimuth_rotation' must be one of (\"clockwise\",\"counter clockwise\", \"unknown\")")
+    tti_azimuth_positive_direction ∈ ("clockwise", "counter clockwise", "unknown", nothing) || error("'tti_azimuth_positive_direction' must be one of (\"clockwise\",\"counter clockwise\", \"unknown\")")
     tti_azimuth_origin_axis ∈ ("x", "-x", "y", "-y", "u", "-u", "v", "-v", "w", "-w", "unknown") || error("'tti_azimuth_origin_axis' must be one of (\"x\", \"-x\", \"y\", \"-y\", \"u\", \"-u\", \"v\", \"-v\", \"w\", \"-w\", \"unknown\")")
-    tti_symmetry_axis_z_direction ∈ ("elevation","depth","unknown") || error("`tti_symmetry_axis_z_direction` must be one of (\"elevation\", \"depth\", or \"unknown\") ")
-    Geometry(u1,un,v1,vn,w1,wn,umin,umax,vmin,vmax,wmin,wmax,ox,oy,oz,ux,uy,uz,vx,vy,vz,wx,wy,wz,x_direction,y_direction,z_direction,tti_angle_units,tti_azimuth_positive_direction,tti_azimuth_origin_axis,tti_symmetry_axis_z_direction,1,1,1)
+    tti_symmetry_axis_z_direction ∈ ("elevation","depth","unknown", nothing) || error("`tti_symmetry_axis_z_direction` must be one of (\"elevation\", \"depth\", or \"unknown\") ")
+    tti_azimuth_90_axis ∈ ("x", "-x", "y", "-y", "u", "-u", "v", "-v", "w", "-w", "unknown") || error("`tti_azimuth_90_axis` must be one of (\"x\", \"-x\", \"y\", \"-y\", \"u\", \"-u\", \"v\", \"-v\", \"w\", \"-w\", \"unknown\")")
+    tti_tilt_origin_axis ∈ ("z", "-z", "u", "-u", "v", "-v", "w", "-w", "unknown") || error("`tti_tilt_origin_axis` must be one of (\"z\", \"-z\", \"u\", \"-u\", \"v\", \"-v\", \"w\", \"-w\", \"unknown\")")
+
+    if tti_azimuth_positive_direction !== nothing
+        @warn "`tti_azimuth_positive_direction` is deprecated, use `tti_azimuth_90_axis` instead" maxlog=1
+    end
+    if tti_symmetry_axis_z_direction !== nothing
+        @warn "`tti_symmetry_axis_z_direction` is deprecated, use `tti_tilt_origin_axis` instead" maxlog=1
+    end
+
+    u, v, w = (ux,uy,uz), (vx,vy,vz), (wx,wy,wz)
+    azimuth_positive_direction = legacy_tti_azimuth_positive_direction(u, v, w, tti_azimuth_origin_axis, tti_azimuth_90_axis)
+    if tti_azimuth_positive_direction === nothing
+        tti_azimuth_positive_direction = tti_azimuth_90_axis == "unknown" ? "clockwise" : azimuth_positive_direction
+    elseif "unknown" ∉ (tti_azimuth_positive_direction, azimuth_positive_direction) && tti_azimuth_positive_direction != azimuth_positive_direction
+        @warn "tti_azimuth_positive_direction=\"$tti_azimuth_positive_direction\" contradicts tti_azimuth_origin_axis=\"$tti_azimuth_origin_axis\" and tti_azimuth_90_axis=\"$tti_azimuth_90_axis\" (\"$azimuth_positive_direction\"), which take precedence"
+    end
+    symmetry_axis_z_direction = legacy_tti_symmetry_axis_z_direction(u, v, w, tti_tilt_origin_axis)
+    if tti_symmetry_axis_z_direction === nothing
+        tti_symmetry_axis_z_direction = tti_tilt_origin_axis == "unknown" ? "elevation" : symmetry_axis_z_direction
+    elseif "unknown" ∉ (tti_symmetry_axis_z_direction, symmetry_axis_z_direction) && tti_symmetry_axis_z_direction != symmetry_axis_z_direction
+        @warn "tti_symmetry_axis_z_direction=\"$tti_symmetry_axis_z_direction\" contradicts tti_tilt_origin_axis=\"$tti_tilt_origin_axis\" (\"$symmetry_axis_z_direction\"), which takes precedence"
+    end
+
+    tti_axes_from_legacy!(Geometry(u1,un,v1,vn,w1,wn,umin,umax,vmin,vmax,wmin,wmax,ox,oy,oz,ux,uy,uz,vx,vy,vz,wx,wy,wz,x_direction,y_direction,z_direction,tti_angle_units,tti_azimuth_positive_direction,tti_azimuth_origin_axis,tti_symmetry_axis_z_direction,tti_azimuth_90_axis,tti_tilt_origin_axis,1,1,1))
 end
+
+# the positional constructor from before tti_azimuth_90_axis and tti_tilt_origin_axis were added
+Geometry(u1,un,v1,vn,w1,wn,umin,umax,vmin,vmax,wmin,wmax,ox,oy,oz,ux,uy,uz,vx,vy,vz,wx,wy,wz,x_direction,y_direction,z_direction,tti_angle_units,tti_azimuth_positive_direction,tti_azimuth_origin_axis,tti_symmetry_axis_z_direction,modelstride_u,modelstride_v,modelstride_w) =
+    tti_axes_from_legacy!(Geometry(u1,un,v1,vn,w1,wn,umin,umax,vmin,vmax,wmin,wmax,ox,oy,oz,ux,uy,uz,vx,vy,vz,wx,wy,wz,x_direction,y_direction,z_direction,tti_angle_units,tti_azimuth_positive_direction,tti_azimuth_origin_axis,tti_symmetry_axis_z_direction,"unknown","unknown",modelstride_u,modelstride_v,modelstride_w))
 
 Base.Dict(g::Geometry) = Dict(
     "ox"=>g.ox, "oy"=>g.oy, "oz"=>g.oz,
@@ -149,7 +246,9 @@ Base.Dict(g::Geometry) = Dict(
     "tti_angle_units"=>g.tti_angle_units,
     "tti_azimuth_positive_direction"=>g.tti_azimuth_positive_direction,
     "tti_azimuth_origin_axis"=>g.tti_azimuth_origin_axis,
-    "tti_symmetry_axis_z_direction"=>g.tti_symmetry_axis_z_direction)
+    "tti_symmetry_axis_z_direction"=>g.tti_symmetry_axis_z_direction,
+    "tti_azimuth_90_axis"=>g.tti_azimuth_90_axis,
+    "tti_tilt_origin_axis"=>g.tti_tilt_origin_axis)
 
 struct Extent{C<:Container}
     name::String
@@ -1073,7 +1172,7 @@ function get_geometry(description::Dict)
 
     c = description["geometry"]
 
-    Geometry(
+    g = Geometry(
         c["u1"],c["un"],c["v1"],c["vn"],c["w1"],c["wn"],
         get(c, "umin", 0.0), get(c, "umax", 1.0),
         get(c, "vmin", 0.0), get(c, "vmax", 1.0),
@@ -1087,7 +1186,10 @@ function get_geometry(description::Dict)
         haskey(c, "tti_azimuth_positive_direction") ? c["tti_azimuth_positive_direction"] : "unknown",
         haskey(c, "tti_azimuth_origin_axis") ? c["tti_azimuth_origin_axis"] : "unknown",
         haskey(c,"tti_symmetry_axis_z_direction") ? c["tti_symmetry_axis_z_direction"] : "unknown",
+        get(c, "tti_azimuth_90_axis", "unknown"),
+        get(c, "tti_tilt_origin_axis", "unknown"),
         1,1,1) # Ones are for model strides which aren't read until later. Need more elegant fix 
+    tti_axes_from_legacy!(g)
 end
 
 function stringtype2type(format::AbstractString, elementcount=1)
@@ -2574,8 +2676,9 @@ Return the geometry (if any) associated with the
 CloudSeis data-set.
 """
 function TeaSeis.geometry(io::CSeis)
+    # io.geometry is built from the get_geometry method which, in turn, calls the Geometry constructor
+    # the Geometry constructor includes various backwards compatibility adjustments for older data sets
     g = io.geometry
-    # sample_order = get_sample_order(io)
     modelstrides = get_model_strides(io)
 
     if g === nothing
