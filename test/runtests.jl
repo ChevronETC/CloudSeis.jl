@@ -517,9 +517,11 @@ const compressors = Sys.iswindows() ? ("none","blosc","leftjustify","zfp") : ("n
         tti_azimuth_positive_direction = "clockwise"
         tti_azimuth_origin_axis = "y"
         tti_symmetry_axis_z_direction = "elevation"
+        tti_azimuth_90_axis = "x"
+        tti_tilt_origin_axis = "-z" # "elevation" points away from u, which points toward +z
 
         
-        g = Geometry(
+        g = @test_logs (:warn, r"deprecated") (:warn, r"deprecated") Geometry(
             ox=1.0,oy=2.0,oz=3.0,
             ux=4.0,uy=5.0,uz=6.0,
             vx=7.0,vy=8.0,vz=9.0,
@@ -536,7 +538,9 @@ const compressors = Sys.iswindows() ? ("none","blosc","leftjustify","zfp") : ("n
             tti_angle_units = tti_angle_units,
             tti_azimuth_positive_direction = tti_azimuth_positive_direction,
             tti_azimuth_origin_axis = tti_azimuth_origin_axis,
-            tti_symmetry_axis_z_direction=tti_symmetry_axis_z_direction)
+            tti_symmetry_axis_z_direction=tti_symmetry_axis_z_direction,
+            tti_azimuth_90_axis = tti_azimuth_90_axis,
+            tti_tilt_origin_axis = tti_tilt_origin_axis)
 
 
         r = uuid4()
@@ -577,6 +581,8 @@ const compressors = Sys.iswindows() ? ("none","blosc","leftjustify","zfp") : ("n
         @test _g.tti_azimuth_positive_direction == g.tti_azimuth_positive_direction
         @test _g.tti_azimuth_origin_axis == g.tti_azimuth_origin_axis
         @test _g.tti_symmetry_axis_z_direction == g.tti_symmetry_axis_z_direction
+        @test _g.tti_azimuth_90_axis == tti_azimuth_90_axis
+        @test _g.tti_tilt_origin_axis == tti_tilt_origin_axis
         close(io)
         rm(io)
     end
@@ -620,9 +626,31 @@ const compressors = Sys.iswindows() ? ("none","blosc","leftjustify","zfp") : ("n
             @test _g.vmax ≈ 1
             @test _g.wmin ≈ 0
             @test _g.wmax ≈ 1
+            @test _g.tti_azimuth_90_axis == "x"
+            @test _g.tti_tilt_origin_axis == "-z"
             close(io)
             rm(io)
 
+    end
+
+    @testset "geometry, older tti fields in a data-set" begin
+        container = mkcontainer(cloud, "test-$(uuid4())-cs")
+        g = @test_logs (:warn, r"deprecated") (:warn, r"deprecated") Geometry(ux=0.0, uy=0.0, uz=500.0, vx=800.0, vy=0.0, vz=0.0, wx=0.0, wy=300.0, wz=0.0, u1=1, un=10, v1=1, vn=11, w1=1, wn=12,
+            tti_azimuth_origin_axis="y", tti_azimuth_positive_direction="counter clockwise", tti_symmetry_axis_z_direction="depth")
+        io = csopen_robust(container, "w", axis_propdefs=[stockprop[:IU],stockprop[:IV],stockprop[:IW]], axis_lengths=[g.un,g.vn,g.wn], geometry=g, compressor=compressor, compressor_options=compressor_options)
+        close(io)
+
+        # as written before tti_azimuth_90_axis and tti_tilt_origin_axis were added
+        description = JSON.parse(read(io.containers[1], "description.json", String))
+        delete!(description["geometry"], "tti_azimuth_90_axis")
+        delete!(description["geometry"], "tti_tilt_origin_axis")
+        write(io.containers[1], "description.json", JSON.json(description))
+
+        # u points along z, so "depth" (toward u) is z
+        io = csopen_robust(container, "r")
+        _g = geometry(io)
+        @test (_g.tti_azimuth_90_axis, _g.tti_tilt_origin_axis) == ("-x", "z")
+        rm(io)
     end
 
     @testset "in" begin
@@ -1773,8 +1801,100 @@ end
     @test g.un == 10
     @test g.vn == 12
     @test g.wn == 20
+    # u is along +z, so the default "elevation" is -z
+    @test (g.tti_azimuth_90_axis, g.tti_tilt_origin_axis) == ("x", "-z")
 
     rm(io)
+end
+
+@testset "geometry, tti frame axes" begin
+    # derived from the default "clockwise", while u=(1,0,0) is horizontal, so "elevation" gives no tilt axis
+    g = Geometry()
+    @test g.tti_azimuth_90_axis == "x"
+    @test g.tti_tilt_origin_axis == "unknown"
+
+    g = Geometry(tti_azimuth_origin_axis="v", tti_azimuth_90_axis="-w", tti_tilt_origin_axis="u")
+    @test Dict(g)["tti_azimuth_90_axis"] == "-w"
+    @test Dict(g)["tti_tilt_origin_axis"] == "u"
+
+    g = Geometry(tti_azimuth_origin_axis="-y", tti_azimuth_90_axis="x", tti_tilt_origin_axis="-z")
+    @test g.tti_azimuth_90_axis == "x"
+    @test g.tti_tilt_origin_axis == "-z"
+
+    @test_throws ErrorException Geometry(tti_azimuth_90_axis="z")
+    @test_throws ErrorException Geometry(tti_tilt_origin_axis="x")
+
+    # a mix of axes from x,y,z and u,v,w
+    g = Geometry(ux=0.0, uy=0.0, uz=-1.0, vx=1.0, vy=0.0, vz=0.0, wx=0.0, wy=1.0, wz=0.0, tti_azimuth_origin_axis="v", tti_azimuth_90_axis="w", tti_tilt_origin_axis="z")
+    @test g.tti_tilt_origin_axis == "z"
+
+    # descriptions written before these fields existed
+    c = Dict(Geometry())
+    delete!(c, "tti_azimuth_90_axis")
+    delete!(c, "tti_tilt_origin_axis")
+    g = CloudSeis.get_geometry(Dict("geometry"=>c))
+    @test g.tti_azimuth_90_axis == "x"
+    @test g.tti_tilt_origin_axis == "unknown"
+end
+
+@testset "geometry, older tti fields" begin
+    # u points down along -z, and v,w are horizontal, with v at a bearing of 60 degrees
+    down = (ux=0.0, uy=0.0, uz=-1.0)
+    right = (vx=cosd(30), vy=sind(30), vz=0.0, wx=sind(30), wy=-cosd(30), wz=0.0)
+    left = (vx=cosd(30), vy=sind(30), vz=0.0, wx=-sind(30), wy=cosd(30), wz=0.0)
+
+    # the axes read from a description that only has the older fields
+    function legacy_axes(; tti_azimuth_positive_direction=nothing, tti_symmetry_axis_z_direction=nothing, kwargs...)
+        c = Dict(Geometry(; kwargs...))
+        delete!(c, "tti_azimuth_90_axis")
+        delete!(c, "tti_tilt_origin_axis")
+        tti_azimuth_positive_direction === nothing || (c["tti_azimuth_positive_direction"] = tti_azimuth_positive_direction)
+        tti_symmetry_axis_z_direction === nothing || (c["tti_symmetry_axis_z_direction"] = tti_symmetry_axis_z_direction)
+        g = CloudSeis.get_geometry(Dict("geometry"=>c))
+        g.tti_azimuth_90_axis, g.tti_tilt_origin_axis
+    end
+
+    for (origin, clockwise, counter_clockwise) in (("y","x","-x"), ("x","-y","y"), ("-y","-x","x"), ("-x","y","-y"))
+        @test legacy_axes(; down..., right..., tti_azimuth_origin_axis=origin, tti_azimuth_positive_direction="clockwise", tti_symmetry_axis_z_direction="elevation") == (clockwise, "z")
+        @test legacy_axes(; down..., right..., tti_azimuth_origin_axis=origin, tti_azimuth_positive_direction="counter clockwise", tti_symmetry_axis_z_direction="depth") == (counter_clockwise, "-z")
+    end
+    @test legacy_axes(; ux=0.0, uy=0.0, uz=1.0, right..., tti_symmetry_axis_z_direction="elevation") == ("x", "-z")
+
+    # from v, w is clockwise in map view when u,v,w is right-handed, and -w when it is left-handed
+    @test legacy_axes(; down..., right..., tti_azimuth_origin_axis="v", tti_azimuth_positive_direction="clockwise", tti_symmetry_axis_z_direction="elevation") == ("w", "-u")
+    @test legacy_axes(; down..., left..., tti_azimuth_origin_axis="v", tti_azimuth_positive_direction="clockwise", tti_symmetry_axis_z_direction="depth") == ("-w", "u")
+    @test legacy_axes(; down..., right..., tti_azimuth_origin_axis="-w", tti_azimuth_positive_direction="counter clockwise") == ("-v", "-u")
+
+    # conventions that the older fields cannot describe: azimuth from u, and v,w in a vertical plane (the default v,w are y,z)
+    @test legacy_axes(; down..., right..., tti_azimuth_origin_axis="u") == ("unknown", "unknown")
+    @test legacy_axes(; tti_azimuth_origin_axis="v") == ("unknown", "-u")
+    @test legacy_axes(; down..., right..., tti_azimuth_origin_axis="unknown") == ("unknown", "z")
+    @test legacy_axes(; down..., right..., tti_azimuth_positive_direction="unknown", tti_symmetry_axis_z_direction="unknown") == ("unknown", "unknown")
+
+    # the older fields are derived from the axes, which take precedence when reading
+    c = Dict(Geometry(; down..., right..., tti_azimuth_origin_axis="y", tti_azimuth_90_axis="-x", tti_tilt_origin_axis="-z"))
+    @test (c["tti_azimuth_positive_direction"], c["tti_symmetry_axis_z_direction"]) == ("counter clockwise", "depth")
+    c["tti_azimuth_positive_direction"], c["tti_symmetry_axis_z_direction"] = "clockwise", "elevation"
+    g = CloudSeis.get_geometry(Dict("geometry"=>c))
+    @test (g.tti_azimuth_90_axis, g.tti_tilt_origin_axis) == ("-x", "-z")
+
+    g = Geometry(; tti_azimuth_origin_axis="v", tti_azimuth_90_axis="w", tti_tilt_origin_axis="u")
+    @test (g.tti_azimuth_positive_direction, g.tti_symmetry_axis_z_direction) == ("unknown", "depth")
+
+    for (origin, axis_90, tilt) in (("y","x","z"), ("x","y","-z"), ("-y","x","z"), ("v","w","-u"), ("w","-v","u"))
+        @test legacy_axes(; down..., left..., tti_azimuth_origin_axis=origin, tti_azimuth_90_axis=axis_90, tti_tilt_origin_axis=tilt) == (axis_90, tilt)
+    end
+
+    @test_logs (:warn, r"deprecated") (:warn, r"tti_azimuth_positive_direction.*contradicts") Geometry(; down..., right..., tti_azimuth_positive_direction="clockwise", tti_azimuth_90_axis="-x")
+    @test_logs (:warn, r"deprecated") (:warn, r"tti_symmetry_axis_z_direction.*contradicts") Geometry(; down..., right..., tti_symmetry_axis_z_direction="elevation", tti_tilt_origin_axis="-z")
+
+    @test_logs (:warn, r"tti_azimuth_positive_direction.*deprecated") Geometry(; tti_azimuth_positive_direction="clockwise")
+    @test_logs (:warn, r"tti_symmetry_axis_z_direction.*deprecated") Geometry(; tti_symmetry_axis_z_direction="elevation")
+    @test_logs Geometry(; down..., right..., tti_azimuth_90_axis="x", tti_tilt_origin_axis="z")
+
+    # the positional constructor from before tti_azimuth_90_axis and tti_tilt_origin_axis were added
+    g = Geometry(1,2,1,2,1,2, 0.0,1.0,0.0,1.0,0.0,1.0, 0.0,0.0,0.0, 0.0,0.0,-1.0, 1.0,0.0,0.0, 0.0,1.0,0.0, "east","north","elevation", "degrees","clockwise","y","elevation", 1,1,1)
+    @test (g.tti_azimuth_90_axis, g.tti_tilt_origin_axis) == ("x", "z")
 end
 
 @testset "iscsdata" for cloud in clouds
